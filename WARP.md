@@ -13,7 +13,964 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ---
 
-## 1. Metodología de Desarrollo: TDD (Test-Driven Development)
+## 1. Stack Tecnológico Definitivo y Justificación
+
+### 1.1. Arquitectura de Capas del Sistema M2PRD-001
+
+**El sistema M2PRD-001 adopta una arquitectura de microservicios híbrida que separa responsabilidades en capas especializadas**, cada una optimizada para sus requisitos específicos de rendimiento, escalabilidad y mantenibilidad.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Frontend (Portal Web - RF6.0, RF7.0)                   │
+│ React/Vue.js + Authentication + Subscription Management │
+├─────────────────────────────────────────────────────────┤
+│ Backend (API SaaS - RF8.0)                             │
+│ Node.js/Python + Express/FastAPI + Business Logic      │
+├─────────────────────────────────────────────────────────┤
+│ Orquestación Central (RF1.0-RF5.0, RNF5.0)            │
+│ n8n/Make + Workflow Management + Retry Logic           │
+├─────────────────────────────────────────────────────────┤
+│ Módulo IA/NLP (RF3.0, RF4.0)                          │
+│ Python Serverless + spaCy/OpenAI + Text Processing     │
+├─────────────────────────────────────────────────────────┤
+│ Persistencia de Datos (RF8.0 - Crítico de Negocio)   │
+│ PostgreSQL (ACID) + Redis (Cache) + Stripe Integration │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 1.2. Decisiones de Stack por Componente
+
+#### **Frontend (Portal Web - RF6.0, RF7.0)**
+**Stack:** React.js (o Vue.js como alternativa)
+
+**Justificación Técnica:**
+- **RF6.0 (Autenticación)**: Componentes reutilizables para formularios de login/registro y gestión de sesiones
+- **RF7.0 (Gestión de Suscripciones)**: Interfaces dinámicas para planes, facturación y control de consumo
+- **Principios SOLID**: Arquitectura de componentes que aplica SRP (Single Responsibility Principle) - cada componente tiene una responsabilidad específica
+- **Clean Architecture**: Separación clara entre presentación y lógica de negocio mediante hooks/composables
+
+```javascript path=null start=null
+// ✅ Ejemplo de componente React aplicando SRP
+function SubscriptionPlanCard({ plan, onSelect }) {
+  // Una sola responsabilidad: mostrar un plan de suscripción
+  return (
+    <div className="plan-card">
+      <h3>{plan.name}</h3>
+      <p>Horas incluidas: {plan.hours}</p>
+      <p>Precio: ${plan.price}/mes</p>
+      <button onClick={() => onSelect(plan)}>Seleccionar Plan</button>
+    </div>
+  );
+}
+```
+
+#### **Backend (API de Monetización - RF8.0)**
+**Stack:** Node.js con Express (o Python con FastAPI como alternativa)
+
+**Justificación Técnica:**
+- **RF8.0 (Control de Consumo)**: Manejo eficiente de I/O para múltiples conexiones concurrentes con servicios externos
+- **RF6.0 (Autenticación)**: Middleware robusto para JWT y gestión de sesiones
+- **Principios ACID**: Integración nativa con PostgreSQL para transacciones críticas de facturación
+- **Clean Architecture**: API REST que implementa Dependency Inversion Principle (DIP)
+
+```javascript path=null start=null
+// ✅ Ejemplo de API aplicando DIP y Clean Architecture
+class SubscriptionController {
+  constructor(subscriptionService, paymentGateway) {
+    this.subscriptionService = subscriptionService; // ✅ DIP
+    this.paymentGateway = paymentGateway; // ✅ DIP
+  }
+  
+  async createSubscription(req, res) {
+    // ✅ Clean Architecture - Controller delega a Use Case
+    const result = await this.subscriptionService.createSubscription(
+      req.body, 
+      req.user.id
+    );
+    res.json(result);
+  }
+}
+```
+
+#### **Persistencia de Datos (Crítico de Negocio - RF8.0)**
+**Stack:** PostgreSQL (Principal) + Redis (Cache)
+
+**Justificación Crítica:**
+- **Prioridad 10/10**: Los datos financieros y de consumo requieren garantías ACID absolutas
+- **RF7.0 (Suscripciones)**: Transacciones atómicas para facturación y cambios de plan
+- **RF8.0 (Control de Consumo)**: Consistencia crítica para límites de horas y facturación
+- **Principios ACID**: PostgreSQL garantiza Atomicidad, Consistencia, Aislamiento y Durabilidad
+- **Performance**: Redis como cache para consultas frecuentes de límites de consumo
+
+```sql path=null start=null
+-- ✅ Ejemplo de transacción ACID para consumo de horas
+BEGIN TRANSACTION;
+
+-- Verificar límite disponible
+SELECT available_hours FROM user_subscriptions 
+WHERE user_id = $1 AND status = 'active';
+
+-- Decrementar horas si hay disponibles
+UPDATE user_subscriptions 
+SET available_hours = available_hours - $2,
+    last_updated = NOW()
+WHERE user_id = $1 AND available_hours >= $2;
+
+-- Registrar el consumo
+INSERT INTO usage_logs (user_id, hours_consumed, meeting_id, timestamp)
+VALUES ($1, $2, $3, NOW());
+
+COMMIT; -- ✅ Todo o nada (Atomicidad)
+```
+
+#### **Módulo IA/NLP (RF3.0, RF4.0)**
+**Stack:** Python Serverless (AWS Lambda/Google Cloud Functions)
+
+**Justificación Técnica:**
+- **RF3.0 (Generación de PRD)**: Ecosistema Python robusto para NLP (spaCy, NLTK, transformers)
+- **RF4.0 (Asignación Inteligente)**: Bibliotecas de ML maduras para clasificación de requisitos
+- **Serverless**: Escalado automático y costo-eficiencia para procesamiento bajo demanda
+- **Clean Architecture**: Módulo independiente que implementa Strategy Pattern
+
+```python path=null start=null
+# ✅ Ejemplo de Strategy Pattern para extracción de requisitos
+from abc import ABC, abstractmethod
+
+class RequirementExtractionStrategy(ABC):
+    @abstractmethod
+    def extract_requirements(self, transcription: str) -> List[Requirement]:
+        pass
+
+class OpenAIExtractionStrategy(RequirementExtractionStrategy):
+    """✅ Strategy específica usando OpenAI GPT"""
+    
+    def extract_requirements(self, transcription: str) -> List[Requirement]:
+        # Procesamiento con OpenAI API
+        response = self.openai_client.chat.completions.create(
+            model="gpt-4",
+            messages=[{
+                "role": "system", 
+                "content": "Extract functional and non-functional requirements"
+            }]
+        )
+        return self._parse_requirements(response)
+
+# ✅ Context que usa la estrategia (Strategy Pattern)
+class RequirementProcessor:
+    def __init__(self, strategy: RequirementExtractionStrategy):
+        self.strategy = strategy  # ✅ DIP - Depende de abstracción
+    
+    def process_meeting(self, transcription: str) -> ProcessedPRD:
+        requirements = self.strategy.extract_requirements(transcription)
+        return self._generate_prd(requirements)
+```
+
+#### **Orquestación Central (RF1.0-RF5.0, RNF5.0)**
+**Stack:** n8n/Make (Decisión Arquitectónica Fija)
+
+**Justificación Estratégica:**
+- **Prioridad 10/10**: Definido como componente central inamovible
+- **RNF5.0 (Tolerancia a Fallos)**: Gestión declarativa de reintentos y recuperación
+- **RF1.0-RF5.0**: Orquestación visual de todo el flujo de procesamiento
+- **Clean Architecture**: Actúa como Application Service coordinando Use Cases
+- **Observability**: Monitoreo visual del estado de cada paso del workflow
+
+#### **Infraestructura y Pasarelas de Pago**
+**Stack:** Docker + Docker Compose (Desarrollo) + AWS/GCP + Stripe + Kubernetes (Producción)
+
+**Justificación de Despliegue y Desarrollo:**
+- **Docker/Docker Compose:** Contenerización completa para desarrollo local uniforme y reproducible
+- **Stripe:** Estándar de industria para RF7.0 (facturación recurrente) y gestión de planes SaaS
+- **Serverless:** Módulo IA/NLP con escalado automático y costo optimizado
+- **Kubernetes:** Orquestación de contenedores en producción con alta disponibilidad
+- **Clean Architecture:** Infraestructura como detalle de implementación, no afecta lógica de negocio
+
+### 1.3. Mapeo de Stack a Principios Arquitectónicos
+
+| Principio/Patrón | Componente de Stack | Implementación |
+|------------------|--------------------|-----------------|
+| **ACID (Atomicity, Consistency, Isolation, Durability)** | PostgreSQL | Transacciones críticas para facturación y consumo |
+| **SRP (Single Responsibility)** | React Components + Microservicios | Cada componente/servicio tiene una responsabilidad específica |
+| **DIP (Dependency Inversion)** | Node.js/Python APIs | Inyección de dependencias y uso de abstracciones |
+| **Strategy Pattern** | Python IA/NLP | Algoritmos de extracción intercambiables (OpenAI, spaCy) |
+| **Circuit Breaker** | n8n/Make + Redis | Tolerancia a fallos en servicios externos |
+| **Clean Architecture** | Separación por Capas | Frontend→Backend→Domain→Infrastructure |
+| **Factory Pattern** | Microservicios | Creación de servicios especializados por dominio |
+
+### 1.4. Consideraciones de Seguridad y RNF2.0
+
+**Gestión de Secretos:**
+- **Stripe API Keys**: AWS Secrets Manager/Google Secret Manager
+- **Database Credentials**: Rotación automática cada 30 días
+- **JWT Secrets**: Almacenamiento seguro con expiración configurada
+- **API Keys Externos**: Deepgram, OpenAI keys en gestores de secretos dedicados
+
+**Cumplimiento GDPR/SOC2:**
+- **Logs estructurados**: Sin datos sensibles en logs (PII masking)
+- **Cifrado en tránsito**: HTTPS/TLS 1.3 en todas las comunicaciones
+- **Cifrado en reposo**: PostgreSQL con cifrado a nivel de disco
+- **Auditoría**: Trazabilidad completa de transacciones financieras
+
+---
+
+## 2. Arquitectura de Microservicios: Modelo SaaS (V1.4)
+
+### 2.1. Análisis de Componentes Centrales y Separación de Responsabilidades
+
+**La transición al modelo SaaS (V1.4) redefine la arquitectura al centralizar la lógica de negocio y monetización en un Backend de Servicios dedicado.** Esta evolución arquitectónica implementa una **separación crítica de responsabilidades** que alinea perfectamente con los principios SOLID establecidos en este documento.
+
+#### **Evolución Arquitectónica: De Orquestador Monolítico a Microservicios Especializados**
+
+Anteriormente, el Workflow (n8n/Make) actuaba como orquestador y gatekeeper simultáneamente, violando el **Principio de Responsabilidad Única (SRP)**. La nueva arquitectura SaaS V1.4 **redistribuye estas responsabilidades**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ANTES: Workflow Monolítico                  │
+│  ❌ Orquestación + Gatekeeper + Control de Consumo + Negocio   │
+└─────────────────────────────────────────────────────────────────┘
+                                ↓
+┌─────────────────────────────────────────────────────────────────┐
+│               AHORA: Microservicios Especializados              │
+│  ✅ Servicio de Consumo (Gatekeeper) + Workflow (Orquestador)  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### **Componentes Redefinidos según SOLID**
+
+**1. Portal Web Frontend (RF7.0 - Gestión de Suscripciones)**
+- **Responsabilidad Única**: Capa de presentación para gestión de cuentas y planes
+- **Principio OCP**: Extensible para nuevos planes sin modificar código base
+- **Interface Segregation**: Interfaces específicas para autenticación vs. facturación
+
+**2. Servicio de Autenticación/Usuarios (RF6.0)**
+- **Responsabilidad Única**: Validación de identidad y gestión de sesiones
+- **Dependency Inversion**: Depende de abstracciones de autenticación (JWT, OAuth)
+- **Integración ACID**: Transacciones seguras para datos de usuario
+
+**3. Servicio de Suscripciones/Consumo - EL NUEVO GATEKEEPER (RF8.0)**
+- **Responsabilidad Crítica**: Implementa la lógica de monetización y control de acceso
+- **Single Responsibility**: **SOLO** maneja verificación y actualización de consumo
+- **ACID Compliance**: Utiliza transacciones PostgreSQL para operaciones financieras críticas
+- **Circuit Breaker**: Implementa tolerancia a fallos para operaciones de facturación
+
+**4. Workflow (n8n/Make) - ORQUESTADOR PURO**
+- **Responsabilidad Redefinida**: **SOLO** orquestación técnica de procesamiento
+- **Dependency Inversion**: Depende del Servicio de Consumo para autorización
+- **Open/Closed**: Abierto para nuevos pasos de procesamiento, cerrado para lógica de negocio
+
+### 2.2. Diagramas UML del Modelo SaaS (V1.4)
+
+#### **2.2.1. Diagrama de Casos de Uso - Gestión de Suscripciones y Procesamiento**
+
+```mermaid
+%% UML: Diagrama de Casos de Uso (Use Case Diagram) - SaaS Update
+graph TD
+    subgraph system_boundary [Límite del Sistema: Plataforma M2PRD-001 SaaS]
+        subgraph Modulo_Suscripciones [Gestión de Cuenta y Suscripciones]
+            UC_Reg(Registrar/Autenticar Usuario)
+            UC_Sub(Gestionar Plan de Suscripción - RF7.0)
+            UC_Pay(Procesar Pago - Pasarela)
+            UC_Reg --> UC_Sub
+            UC_Sub --> UC_Pay
+        end
+        
+        subgraph Modulo_Procesamiento [Flujo de Generación de PRD]
+            UC_Verif(Verificar Consumo Disponible - RF8.0)
+            UC_Proc(Generar y Asignar Requisitos)
+            UC_Upd(Actualizar Registro de Consumo)
+            UC_Proc -.-> UC_Verif: Consumo es pre-requisito
+            UC_Upd -.-> UC_Proc: Se actualiza post-procesamiento
+        end
+        
+        actor_pm[Jefe de Producto/Suscriptor] 
+        actor_sysb[Sistema de Facturación/Pasarela]
+        
+        actor_pm --> UC_Reg
+        actor_pm --> UC_Sub
+        
+        UC_Verif --> actor_sysb
+        UC_Pay --> actor_sysb
+        
+        UC_Proc --> actor_pm
+    end
+```
+
+#### **2.2.2. Diagrama de Clases - Modelo de Datos SaaS**
+
+```mermaid
+%% UML: Diagrama de Clases (Class Diagram) - SaaS Update (Monetización Focus)
+classDiagram
+    direction LR
+    
+    class Usuario {
+        +id_usuario: string
+        -email: string
+        -password_hash: string
+        +autenticar(token): bool
+        +validarSesion(): bool
+    }
+    
+    class PlanDeSuscripcion {
+        +id_plan: string
+        +nombre: string
+        -limite_horas_mensual: float
+        -precio_mensual: float
+        +getLimite(): float
+        +calcularCosto(): float
+    }
+    
+    class RegistroDeConsumo {
+        +id_registro: string
+        -horas_consumidas: float
+        -fecha_registro: datetime
+        -meeting_id: string
+        +verificarDisponibilidad(id_usuario): bool
+        +actualizarConsumo(horas_usadas): void
+        +obtenerConsumoMensual(): float
+    }
+
+    class Reunion {
+        -id_reunion: string
+        -url_audio: string
+        -duracion_minutos: int
+        -estado: string
+        +calcularHorasConsumidas(): float
+    }
+    
+    class Transaccion {
+        +id_transaccion: string
+        +estado: TransactionStatus
+        -monto: float
+        -stripe_payment_id: string
+        +procesarPago(): bool
+        +validarPago(): bool
+    }
+    
+    class TransactionStatus {
+        <<enumeration>>
+        PAGADO
+        PENDIENTE
+        FALLIDO
+        REEMBOLSADO
+    }
+    
+    %% Relaciones con cardinalidad específica:
+    
+    %% Composición (Rombo relleno) - Fuerte dependencia existencial
+    Usuario "1" *-- "1" PlanDeSuscripcion: tiene
+    
+    %% Agregación (Rombo hueco) - Dependencia lógica/funcional
+    Usuario "1" o-- "*" RegistroDeConsumo: registra
+    PlanDeSuscripcion "1" o-- "1..*" Transaccion: genera
+    RegistroDeConsumo "1" o-- "1" Reunion: asociadoA
+    
+    %% Asociación
+    Usuario "1" -- "0..*" Reunion: organiza
+    Transaccion "1" -- "1" TransactionStatus: tiene
+```
+
+#### **2.2.3. Diagrama de Secuencia - Flujo Completo SaaS con Control de Consumo**
+
+```mermaid
+%% UML: Diagrama de Secuencia (Sequence Diagram) - SaaS Update
+sequenceDiagram
+    actor PM as Jefe de Producto
+    participant Extension as Chrome Extension
+    participant AuthSrv as Servicio Auth/Users
+    participant ConsumoSrv as Servicio Suscripciones/Consumo
+    participant Workflow as n8n/Make Workflow
+    participant Deepgram as Deepgram API
+    participant ModuloIA as Módulo IA/NLP
+    participant Database as PostgreSQL
+    
+    title Flujo M2PRD-001 SaaS: Verificación de Consumo (RF8.0) y Orquestación
+
+    PM->>Extension: 1. Click 'Iniciar Proceso' (RF1.0)
+    activate Extension
+    Extension->>AuthSrv: 2. POST /api/auth/validate (token, meeting_url)
+    deactivate Extension
+    
+    activate AuthSrv
+    AuthSrv->>Database: 2.1. Validar JWT y sesión
+    Database-->>AuthSrv: Usuario válido
+    AuthSrv->>ConsumoSrv: 3. POST /api/consumo/verificar (user_id, estimated_hours)
+    deactivate AuthSrv
+    
+    activate ConsumoSrv
+    note right of ConsumoSrv: 🔒 GATEKEEPER - Lógica de Monetización (RF6.0, RF8.0)
+    ConsumoSrv->>Database: 4. BEGIN TRANSACTION; SELECT available_hours
+    Database-->>ConsumoSrv: Horas disponibles: X
+    
+    alt Consumo OK (Horas Disponibles >= Estimadas)
+        ConsumoSrv->>Workflow: 5. POST /webhook/trigger (meeting_data, user_id)
+        note right of ConsumoSrv: ✅ Autorización concedida
+        deactivate ConsumoSrv
+        
+        activate Workflow
+        note right of Workflow: 🔄 ORQUESTADOR PURO - Solo procesamiento técnico
+        Workflow->>Deepgram: 6. Transcribir audio (RF2.0)
+        activate Deepgram
+        Deepgram-->>Workflow: 7. Transcripción completada
+        deactivate Deepgram
+        
+        Workflow->>ModuloIA: 8. Procesar transcripción (RF3.0, RF4.0)
+        activate ModuloIA
+        ModuloIA-->>Workflow: 9. PRD y tareas generadas
+        deactivate ModuloIA
+        
+        Workflow->>ConsumoSrv: 10. PUT /api/consumo/actualizar (user_id, horas_reales)
+        
+        activate ConsumoSrv
+        ConsumoSrv->>Database: 10.1. UPDATE user_subscriptions SET available_hours -= horas_reales
+        ConsumoSrv->>Database: 10.2. INSERT INTO usage_logs; COMMIT;
+        Database-->>ConsumoSrv: Consumo actualizado
+        ConsumoSrv-->>Workflow: 11. Consumo registrado exitosamente
+        deactivate ConsumoSrv
+        
+        Workflow->>PM: 12. 📧 Notificación: PRD y tareas listas
+        deactivate Workflow
+        
+    else Consumo Excedido (Horas Insuficientes)
+        ConsumoSrv->>Database: ROLLBACK; -- No se procesa
+        ConsumoSrv-->>PM: 5. ❌ Error: Límite de horas excedido (RF8.0)
+        note left of PM: Redirección a RF7.0: Gestionar Plan
+        deactivate ConsumoSrv
+    end
+```
+
+### 2.3. Impacto en Principios Arquitectónicos Existentes
+
+#### **2.3.1. Refuerzo de Principios SOLID**
+
+**Single Responsibility Principle (SRP)** ✅ **MEJORADO**
+- **Antes**: Workflow manejaba orquestación + monetización + control de acceso
+- **Ahora**: Cada microservicio tiene una responsabilidad específica y bien definida
+
+**Open/Closed Principle (OCP)** ✅ **APLICADO**
+- Servicio de Consumo es **cerrado para modificación** en lógica de facturación
+- **Abierto para extensión** mediante nuevos planes y métodos de pago (Stripe)
+
+**Dependency Inversion Principle (DIP)** ✅ **REFORZADO**
+- Workflow ahora **depende de la abstracción** del Servicio de Consumo
+- No conoce detalles de implementación de la lógica de facturación
+
+#### **2.3.2. Fortalecimiento de Principios ACID**
+
+El nuevo **Servicio de Suscripciones/Consumo** implementa transacciones críticas que **requieren garantías ACID absolutas**:
+
+```sql path=null start=null
+-- ✅ ACID Transaction para RF8.0 - Control de Consumo
+BEGIN TRANSACTION; -- 🔒 Atomicidad
+
+-- Verificar disponibilidad (Consistency)
+SELECT available_hours, plan_id 
+FROM user_subscriptions 
+WHERE user_id = $1 AND status = 'active' 
+FOR UPDATE; -- 🔒 Isolation (Row-level locking)
+
+-- Validar business rules (Consistency)
+IF available_hours < estimated_hours THEN
+    ROLLBACK; -- ❌ Atomicidad - Todo o nada
+    RAISE EXCEPTION 'Insufficient hours available';
+END IF;
+
+-- Actualizar consumo (Durability)
+UPDATE user_subscriptions 
+SET available_hours = available_hours - actual_hours,
+    last_usage = NOW()
+WHERE user_id = $1;
+
+-- Registrar auditoría (Durability + Compliance)
+INSERT INTO usage_audit_log 
+(user_id, hours_consumed, meeting_id, transaction_timestamp)
+VALUES ($1, $2, $3, NOW());
+
+COMMIT; -- ✅ Durabilidad - Cambios persisten
+```
+
+#### **2.3.3. Integración con Metodología TDD**
+
+**El nuevo diseño SaaS mantiene y refuerza la metodología TDD** establecida en este documento:
+
+```python path=null start=null
+# ✅ TDD para el nuevo Servicio de Consumo
+class TestConsumoService:
+    """TDD para RF8.0 - Control de Consumo SaaS."""
+    
+    def test_should_allow_processing_when_hours_available(self):
+        """RED: Test que define el comportamiento de autorización."""
+        # Given
+        consumo_service = ConsumoService(database_manager=Mock())
+        user_id = "user-123"
+        estimated_hours = 2.0
+        
+        # Mock: Usuario con 5 horas disponibles
+        consumo_service.database_manager.get_available_hours.return_value = 5.0
+        
+        # When
+        authorization = consumo_service.verificar_consumo_disponible(user_id, estimated_hours)
+        
+        # Then
+        assert authorization.authorized is True
+        assert authorization.remaining_hours == 3.0
+    
+    def test_should_reject_processing_when_insufficient_hours(self):
+        """RED: Test para rechazo por límite excedido."""
+        # Given
+        consumo_service = ConsumoService(database_manager=Mock())
+        user_id = "user-456" 
+        estimated_hours = 10.0
+        
+        # Mock: Usuario con solo 2 horas disponibles
+        consumo_service.database_manager.get_available_hours.return_value = 2.0
+        
+        # When & Then
+        with pytest.raises(InsufficientHoursException) as exc_info:
+            consumo_service.verificar_consumo_disponible(user_id, estimated_hours)
+        
+        assert "insufficient hours" in str(exc_info.value).lower()
+    
+    def test_should_update_consumption_atomically_after_processing(self):
+        """RED: Test para actualización ACID del consumo."""
+        # Given
+        consumo_service = ConsumoService(database_manager=Mock())
+        user_id = "user-789"
+        actual_hours_consumed = 1.5
+        
+        # When
+        result = consumo_service.actualizar_consumo(user_id, actual_hours_consumed)
+        
+        # Then - Verificar transacción ACID
+        assert result.success is True
+        consumo_service.database_manager.execute_transaction.assert_called_once()
+        # Verificar que se llama con UPDATE + INSERT (consumo + auditoría)
+        assert consumo_service.database_manager.execute_transaction.call_args[0][0].startswith('BEGIN')
+```
+
+#### **2.3.4. Circuit Breaker Pattern para Servicios SaaS**
+
+La arquitectura SaaS implementa **Circuit Breaker específicamente para operaciones críticas de facturación**:
+
+```python path=null start=null
+# ✅ Circuit Breaker para operaciones de facturación críticas
+class SaaSPaymentCircuitBreaker(CircuitBreaker):
+    """Circuit Breaker especializado para operaciones SaaS críticas."""
+    
+    def __init__(self):
+        super().__init__(
+            failure_threshold=2,  # Baja tolerancia para operaciones financieras
+            timeout=30,           # Recovery rápido para mejor UX
+            expected_exception=(PaymentGatewayException, DatabaseException)
+        )
+    
+    def call_payment_operation(self, operation: Callable) -> PaymentResult:
+        """Protege operaciones de pago críticas."""
+        try:
+            return self.call(operation)
+        except CircuitBreakerOpenException:
+            # Fallback a modo offline o notificación al admin
+            raise PaymentServiceUnavailableException(
+                "Payment service temporarily unavailable. Please try again in a few minutes."
+            )
+```
+
+---
+
+## 3. Entorno de Desarrollo Local: Contenerización con Docker
+
+### 3.1. Justificación Técnica: Docker como Habilitador de Principios Arquitectónicos
+
+**La contenerización del ecosistema SaaS M2PRD-001 no es solo una decisión de infraestructura**, sino una **implementación directa de los principios SOLID y Clean Architecture** establecidos en este documento.
+
+#### **3.1.1. Alineación Docker ↔️ Principios SOLID**
+
+**Single Responsibility Principle (SRP) + Aislamiento de Contenedores**
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    SRP + DOCKER: 1 Servicio = 1 Contenedor                 │
+│  ✅ Servicio Consumo (Container) • Servicio Auth (Container)           │
+│  ✅ PostgreSQL (Container) • Redis (Container) • Frontend (Container)    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Dependency Inversion Principle (DIP) + Docker Networks**
+- **Abstracción**: Los servicios se comunican a través de nombres de servicio Docker, no IPs hardcodeadas
+- **Intercambiabilidad**: Un contenedor PostgreSQL puede ser reemplazado por MySQL sin cambiar el código
+- **Testabilidad**: Contenedores de test pueden usar bases de datos en memoria o mocks
+
+**Open/Closed Principle (OCP) + Docker Compose**
+- **Cerrado para modificación**: La configuración base del `docker-compose.yml` no cambia
+- **Abierto para extensión**: Nuevos servicios se añaden como contenedores adicionales
+
+#### **3.1.2. Principio KISS (Keep It Simple, Stupid) + Docker Compose**
+
+**Antes de Docker: Configuración Manual Compleja**
+```bash
+# ❌ Configuración manual propensa a errores
+1. Instalar Node.js v18.x
+2. Instalar Python 3.11 + pip
+3. Configurar PostgreSQL + crear DB
+4. Instalar Redis
+5. Configurar variables de entorno
+6. Instalar dependencias frontend
+7. Instalar dependencias backend
+8. Configurar n8n/Make localmente
+9. Configurar certificados SSL
+10. Sincronizar versiones entre desarrolladores
+```
+
+**Después de Docker: Un Solo Comando**
+```bash
+# ✅ KISS - Simplicidad máxima
+docker-compose up --build
+```
+
+### 3.2. Arquitectura de Contenedores del Sistema SaaS
+
+#### **3.2.1. Mapeo de Componentes SaaS a Contenedores Docker**
+
+```yaml path=null start=null
+# docker-compose.yml - Arquitectura Contenerizada M2PRD-001
+version: '3.8'
+
+services:
+  # 📱 Frontend - Portal Web SaaS (RF7.0)
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://backend:8000
+      - REACT_APP_AUTH_URL=http://auth-service:8001
+    depends_on:
+      - backend
+      - auth-service
+    networks:
+      - saas-network
+
+  # 🔐 Servicio de Autenticación (RF6.0)
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://user:pass@postgres:5432/auth_db
+      - JWT_SECRET=${JWT_SECRET}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - saas-network
+
+  # 💰 Servicio de Suscripciones/Consumo - GATEKEEPER (RF8.0)
+  consumption-service:
+    build: ./consumption-service
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=postgresql://user:pass@postgres:5432/consumption_db
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - saas-network
+
+  # 🔄 Backend Principal - Lógica de Negocio
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://user:pass@postgres:5432/main_db
+      - CONSUMPTION_SERVICE_URL=http://consumption-service:8002
+      - N8N_WEBHOOK_URL=http://n8n:5678
+    depends_on:
+      - postgres
+      - consumption-service
+    networks:
+      - saas-network
+
+  # 🤖 Módulo IA/NLP (RF3.0, RF4.0)
+  ai-nlp-service:
+    build: ./ai-nlp-service
+    ports:
+      - "8003:8003"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+    networks:
+      - saas-network
+
+  # 📊 Orquestación n8n (RF1.0-RF5.0)
+  n8n:
+    image: n8nio/n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_DATABASE=n8n_db
+      - DB_POSTGRESDB_USER=user
+      - DB_POSTGRESDB_PASSWORD=pass
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      - postgres
+    networks:
+      - saas-network
+
+  # 💾 PostgreSQL - ACID Database (Crítico)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_MULTIPLE_DATABASES=auth_db,consumption_db,main_db,n8n_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh
+    ports:
+      - "5432:5432"
+    networks:
+      - saas-network
+
+  # ⚡ Redis - Cache y Sesión Store
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - saas-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  n8n_data:
+
+networks:
+  saas-network:
+    driver: bridge
+```
+
+#### **3.2.2. Beneficios de la Contenerización por Principio Arquitectónico**
+
+| Principio Arquitectónico | Beneficio Docker | Implementación Concreta |
+|---------------------------|------------------|-------------------------|
+| **SRP** | Aislamiento de responsabilidades | 1 servicio = 1 contenedor |
+| **DIP** | Abstracción de dependencias | Service names en vez de IPs |
+| **ACID** | Persistencia garantizada | Volumes para PostgreSQL |
+| **KISS** | Simplicidad operativa | `docker-compose up --build` |
+| **Circuit Breaker** | Aislamiento de fallos | Contenedores independientes |
+| **Clean Architecture** | Separación de capas | Redes Docker separadas |
+
+### 3.3. Comandos de Desarrollo y Operación
+
+#### **3.3.1. Comandos Esenciales para Desarrolladores**
+
+```bash path=null start=null
+# ✅ COMANDO PRINCIPAL - Levantar entorno completo
+docker-compose up --build
+
+# 🔄 Reconstruir servicios específicos
+docker-compose build frontend backend
+
+# 📊 Ver logs de servicios específicos
+docker-compose logs -f consumption-service
+
+# 🔧 Ejecutar comandos dentro de contenedores
+docker-compose exec backend python manage.py migrate
+docker-compose exec postgres psql -U user -d consumption_db
+
+# 🧪 Limpiar entorno (desarrollo)
+docker-compose down -v  # Elimina contenedores y volúmenes
+docker system prune -a  # Limpieza completa
+
+# 📊 Monitoreo del sistema
+docker-compose ps      # Estado de servicios
+docker-compose top     # Procesos en ejecución
+```
+
+#### **3.3.2. Flujo de Desarrollo con TDD + Docker**
+
+```bash path=null start=null
+# 1. 🏃‍♂️ Iniciar entorno de desarrollo
+docker-compose up --build
+
+# 2. ⚡ Ejecutar tests TDD en contenedores
+docker-compose exec backend pytest tests/ -v
+docker-compose exec frontend npm test
+
+# 3. 🔄 Hot-reload automático (desarrollo)
+# Los cambios en código se reflejan automáticamente
+# mediante volumes montados
+
+# 4. 🔍 Debug de servicios
+docker-compose exec consumption-service python -m pdb app.py
+```
+
+### 3.4. Configuración de Variables de Entorno y Secretos
+
+#### **3.4.1. Archivo .env para Desarrollo Local**
+
+```bash path=null start=null
+# .env - Variables de entorno locales
+# 🔒 Secretos de desarrollo (NO usar en producción)
+JWT_SECRET=dev-jwt-secret-key-change-in-production
+STRIPE_SECRET_KEY=sk_test_your_stripe_test_key_here
+OPENAI_API_KEY=your-openai-api-key
+DEEPGRAM_API_KEY=your-deepgram-api-key
+
+# 💾 Database
+POSTGRES_USER=user
+POSTGRES_PASSWORD=pass
+POSTGRES_DB=memorymeet_dev
+
+# ⚡ Redis
+REDIS_PASSWORD=dev-redis-password
+
+# 🌍 URLs de servicios
+FRONTEND_URL=http://localhost:3000
+BACKEND_URL=http://localhost:8000
+AUTH_SERVICE_URL=http://localhost:8001
+CONSUMPTION_SERVICE_URL=http://localhost:8002
+```
+
+#### **3.4.2. Configuración de Seguridad Local vs. Producción**
+
+**Desarrollo Local (Docker Compose)**
+- Secretos en archivo `.env` (Git-ignored)
+- Certificados autofirmados
+- Debug mode habilitado
+- Bases de datos sin cifrado
+
+**Producción (Kubernetes + AWS/GCP)**
+- AWS Secrets Manager / Google Secret Manager
+- Certificados válidos (Let's Encrypt)
+- Debug mode deshabilitado
+- Cifrado en tránsito y reposo
+
+### 3.5. Integración con Principios de Testing (TDD)
+
+#### **3.5.1. Contenedores Especializados para Testing**
+
+```yaml path=null start=null
+# docker-compose.test.yml - Entorno de testing aislado
+version: '3.8'
+
+services:
+  # 🧪 Base de datos de test (en memoria)
+  postgres-test:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=test_db
+      - POSTGRES_USER=test_user
+      - POSTGRES_PASSWORD=test_pass
+    tmpfs:
+      - /var/lib/postgresql/data  # Base de datos en memoria (rápido)
+
+  # 📊 Test runner para backend
+  backend-test:
+    build:
+      context: ./backend
+      target: test  # Multi-stage build
+    environment:
+      - DATABASE_URL=postgresql://test_user:test_pass@postgres-test:5432/test_db
+      - TESTING=true
+    depends_on:
+      - postgres-test
+    command: pytest tests/ -v --cov=app --cov-report=html
+
+  # ⚡ Test runner para frontend
+  frontend-test:
+    build:
+      context: ./frontend
+      target: test
+    environment:
+      - CI=true
+    command: npm test -- --coverage --watchAll=false
+```
+
+**Comando para ejecutar suite completa de tests:**
+```bash path=null start=null
+# ✅ TDD con Docker - Suite completa
+docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit
+```
+
+### 3.6. Monitoreo y Observabilidad en Contenedores
+
+#### **3.6.1. Logging Estructurado y Métricas**
+
+```yaml path=null start=null
+# Extensión para observabilidad local
+services:
+  # 📊 Prometheus - Métricas
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - saas-network
+
+  # 📈 Grafana - Dashboards
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - saas-network
+```
+
+### 3.7. Onboarding de Desarrolladores: Guía de Inicio Rápido
+
+#### **3.7.1. Setup Inicial - Menos de 5 Minutos**
+
+```bash path=null start=null
+# 🏃‍♂️ ONBOARDING COMPLETO M2PRD-001 SaaS
+
+# 1. Clonar repositorio
+git clone https://github.com/your-org/m2prd-001-saas.git
+cd m2prd-001-saas
+
+# 2. Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tus API keys
+
+# 3. ✅ COMANDO MÁGICO - Un solo comando para todo
+docker-compose up --build
+
+# 4. Verificar que todo funciona
+# 📱 Frontend: http://localhost:3000
+# 🔐 API Auth: http://localhost:8001/health
+# 💰 API Consumo: http://localhost:8002/health  
+# 🔄 Backend: http://localhost:8000/health
+# 📊 n8n: http://localhost:5678
+```
+
+#### **3.7.2. Checklist de Verificación Post-Setup**
+
+- [ ] **Servicios activos**: `docker-compose ps` muestra todos los servicios "Up"
+- [ ] **Base de datos**: PostgreSQL acepta conexiones en puerto 5432
+- [ ] **Cache**: Redis responde en puerto 6379
+- [ ] **APIs**: Endpoints `/health` responden con status 200
+- [ ] **Frontend**: Aplicación React carga en http://localhost:3000
+- [ ] **Orquestación**: n8n accesible en http://localhost:5678
+- [ ] **Tests pasan**: `docker-compose -f docker-compose.test.yml up`
+
+---
+
+## 4. Metodología de Desarrollo: TDD (Test-Driven Development)
 
 ### 1.1. Fundamentos del Ciclo TDD
 
@@ -440,7 +1397,7 @@ class CircuitBreaker:
 
 ---
 
-## 2. Principios de Diseño: SOLID y KISS (Potenciados por TDD)
+## 5. Principios de Diseño: SOLID y KISS (Potenciados por TDD)
 
 ### 2.1. TDD + Single Responsibility Principle (SRP)
 
@@ -728,7 +1685,7 @@ class MeetingProcessor:
 
 ---
 
-## 3. Estrategias de Arquitectura: Clean Architecture (Guiada por TDD)
+## 6. Estrategias de Arquitectura: Clean Architecture (Guiada por TDD)
 
 ### 3.1. Capas de Clean Architecture
 
@@ -1154,7 +2111,7 @@ class JiraIntegrationAdapter(PMSIntegration):
 
 ---
 
-## 4. Patrones de Diseño Aplicados
+## 7. Patrones de Diseño Aplicados
 
 ### 4.1. Factory Pattern
 
@@ -1431,7 +2388,7 @@ class RobustTranscriptionService:
 
 ---
 
-## 5. Bases de Datos: Principios ACID (Validados con TDD)
+## 8. Bases de Datos: Principios ACID (Validados con TDD)
 
 ### 5.1. TDD para Transacciones ACID
 
@@ -1780,7 +2737,7 @@ class ConcurrentMeetingProcessor:
 
 ---
 
-## 6. Gestión de Calidad de Código
+## 9. Gestión de Calidad de Código
 
 ### 6.1. Clean Code Principles
 
@@ -2043,7 +3000,7 @@ class ApplicationConfig:
 
 ---
 
-## 7. Resumen de Implementación TDD + Arquitectura
+## 10. Resumen de Implementación TDD + Arquitectura
 
 ### 7.1. Checklist de Principios Aplicados con TDD
 
@@ -2128,7 +3085,7 @@ quality_check() {
 
 ---
 
-## ⚠️ Advertencias Críticas sobre Implementación TDD
+## 11. ⚠️ Advertencias Críticas sobre Implementación TDD
 
 ### Revisión Humana Obligatoria para TDD
 
