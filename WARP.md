@@ -56,11 +56,35 @@ class TestMeetingProcessor:
         assert result.prd is not None
         assert result.processing_time_seconds < 300  # RNF1.0: < 5 minutos
         assert len(result.tasks) > 0
+    
+    def test_should_reject_invalid_meeting_url(self):
+        """RED: Test de validación de entrada."""
+        # Given
+        meeting_processor = MeetingProcessor(Mock(), Mock(), Mock())
+        invalid_url = "not-a-valid-url"
+        
+        # When & Then
+        with pytest.raises(InvalidMeetingUrlException) as exc_info:
+            meeting_processor.process_meeting(invalid_url)
+        
+        assert "Invalid meeting URL" in str(exc_info.value)
 ```
 
 #### **Paso 2: GREEN - Implementación Mínima**
 ```python path=null start=null
 # ✅ TDD GREEN - Código mínimo para hacer pasar los tests
+from dataclasses import dataclass
+from typing import List
+import re
+from abc import ABC, abstractmethod
+
+@dataclass
+class ProcessingResult:
+    success: bool
+    prd: 'PRD' = None
+    tasks: List['TareaAsignada'] = None
+    processing_time_seconds: float = 0.0
+
 class MeetingProcessor:
     """✅ TDD GREEN - Implementación mínima que satisface los tests."""
     
@@ -71,11 +95,11 @@ class MeetingProcessor:
     
     def process_meeting(self, meeting_url: str) -> ProcessingResult:
         """Implementación mínima para pasar los tests."""
-        # Validación básica
+        # Validación básica para pasar el test de URL inválida
         if not self._is_valid_meeting_url(meeting_url):
             raise InvalidMeetingUrlException(f"Invalid meeting URL: {meeting_url}")
         
-        # Implementación mínima para pasar el test
+        # Implementación mínima para pasar el test de éxito
         mock_prd = PRD(id="test-prd", titulo="Test PRD")
         mock_tasks = [TareaAsignada(id_tarea="task-1", descripcion="Test task")]
         
@@ -85,6 +109,15 @@ class MeetingProcessor:
             tasks=mock_tasks,
             processing_time_seconds=45.0  # < 300 segundos (RNF1.0)
         )
+    
+    def _is_valid_meeting_url(self, url: str) -> bool:
+        """Validación mínima para pasar los tests."""
+        valid_patterns = [
+            r'https://meet\.google\.com/.+',
+            r'https://teams\.microsoft\.com/.+',
+            r'https://zoom\.us/.+'
+        ]
+        return any(re.match(pattern, url) for pattern in valid_patterns)
 ```
 
 #### **Paso 3: REFACTOR - Mejora del Diseño**
@@ -92,6 +125,7 @@ class MeetingProcessor:
 # ✅ TDD REFACTOR - Aplicamos principios SOLID y Clean Architecture
 from abc import ABC, abstractmethod
 from typing import Protocol
+import logging
 
 # Aplicamos ISP (Interface Segregation Principle)
 class AudioProcessor(Protocol):
@@ -99,6 +133,9 @@ class AudioProcessor(Protocol):
 
 class RequirementExtractor(Protocol):
     def extract_requirements(self, transcription: str) -> List['Requisito']: pass
+
+class TaskAssigner(Protocol):
+    def assign_tasks(self, requirements: List['Requisito']) -> List['TareaAsignada']: pass
 
 class MeetingProcessor:
     """
@@ -114,40 +151,77 @@ class MeetingProcessor:
         self, 
         audio_processor: AudioProcessor,
         requirement_extractor: RequirementExtractor,
-        task_assigner: TaskAssigner
+        task_assigner: TaskAssigner,
+        logger: logging.Logger = None
     ):
         self.audio_processor = audio_processor
         self.requirement_extractor = requirement_extractor
         self.task_assigner = task_assigner
+        self.logger = logger or logging.getLogger(__name__)
     
     def process_meeting(self, meeting_url: str) -> ProcessingResult:
         """✅ REFACTOR - Implementación robusta que mantiene tests verdes."""
-        # Procesamiento con mejor separación de responsabilidades
-        transcription = self.audio_processor.process_audio(meeting_url)
-        requirements = self.requirement_extractor.extract_requirements(transcription)
+        start_time = time.time()
         
-        prd = self._generate_prd_from_requirements(requirements)
-        tasks = self.task_assigner.assign_tasks(requirements)
+        try:
+            # Validación mejorada
+            self._validate_meeting_url(meeting_url)
+            
+            # Procesamiento con mejor separación de responsabilidades
+            transcription = self.audio_processor.process_audio(meeting_url)
+            requirements = self.requirement_extractor.extract_requirements(transcription)
+            
+            prd = self._generate_prd_from_requirements(requirements)
+            tasks = self.task_assigner.assign_tasks(requirements)
+            
+            processing_time = time.time() - start_time
+            
+            # Validación de RNF1.0 (< 5 minutos)
+            if processing_time > 300:
+                self.logger.warning(f"Processing time exceeded 5 minutes: {processing_time}s")
+            
+            return ProcessingResult(
+                success=True,
+                prd=prd,
+                tasks=tasks,
+                processing_time_seconds=processing_time
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Meeting processing failed: {str(e)}")
+            raise
+    
+    def _validate_meeting_url(self, url: str) -> None:
+        """✅ REFACTOR - Validación extraída a método privado (Clean Code)."""
+        if not url or not self._is_valid_meeting_url(url):
+            raise InvalidMeetingUrlException(f"Invalid meeting URL: {url}")
+    
+    def _generate_prd_from_requirements(self, requirements: List[Requisito]) -> PRD:
+        """✅ REFACTOR - Lógica de generación de PRD extraída."""
+        if not requirements:
+            raise ValueError("Cannot generate PRD without requirements")
         
-        return ProcessingResult(
-            success=True,
-            prd=prd,
-            tasks=tasks,
-            processing_time_seconds=time.time() - start_time
+        return PRD(
+            id=self._generate_prd_id(),
+            titulo=self._extract_title_from_requirements(requirements),
+            requirements=requirements,
+            fecha_creacion=datetime.now()
         )
 ```
 
-### 1.3. TDD para RF4.0 - Asignación Inteligente de Tareas
+### 1.3. TDD para Casos de Uso Específicos del Proyecto
 
+#### **TDD para RF4.0 - Asignación Inteligente de Tareas**
 ```python path=null start=null
+# ✅ TDD para Factory Pattern de Asignación de Roles
 class TestRoleAssignmentFactory:
-    """✅ TDD para RF4.0 - Asignación Inteligente de Tareas."""
+    """TDD para RF4.0 - Asignación Inteligente de Tareas."""
     
     def test_should_assign_frontend_developer_for_ui_requirements(self):
         """RED: Test que define comportamiento de clasificación."""
         # Given
         ui_requirement = Requisito(
-            descripcion="Necesitamos una interfaz React responsive",
+            descripcion="Necesitamos una interfaz React responsive para el dashboard",
             tipo=RequirementType.FUNCTIONAL
         )
         
@@ -161,7 +235,7 @@ class TestRoleAssignmentFactory:
         """RED: Test para clasificación de APIs."""
         # Given
         api_requirement = Requisito(
-            descripcion="Implementar API REST para autenticación",
+            descripcion="Implementar API REST para autenticación con JWT",
             tipo=RequirementType.FUNCTIONAL
         )
         
@@ -170,19 +244,198 @@ class TestRoleAssignmentFactory:
         
         # Then
         assert assigned_role == "Backend Developer"
+    
+    def test_should_assign_cloud_engineer_for_infrastructure_requirements(self):
+        """RED: Test para requisitos de infraestructura."""
+        # Given
+        infra_requirement = Requisito(
+            descripcion="Configurar auto-scaling en AWS Lambda para el procesamiento",
+            tipo=RequirementType.NON_FUNCTIONAL
+        )
+        
+        # When
+        assigned_role = RoleAssignmentFactory.get_assignee_for_requirement(infra_requirement)
+        
+        # Then
+        assert assigned_role == "Cloud Engineer"
 
-# GREEN: Factory que cumple con los tests
+# GREEN: Implementación mínima
 class RoleAssignmentFactory:
+    """✅ TDD GREEN - Factory que cumple con los tests."""
+    
     @classmethod
     def get_assignee_for_requirement(cls, requirement: Requisito) -> str:
+        """Implementación mínima para pasar los tests."""
         description_lower = requirement.descripcion.lower()
         
-        if any(keyword in description_lower for keyword in ['react', 'ui', 'interface']):
+        # Lógica mínima para pasar los tests
+        if any(keyword in description_lower for keyword in ['react', 'ui', 'interface', 'dashboard']):
             return "Frontend Developer"
-        elif any(keyword in description_lower for keyword in ['api', 'rest', 'autenticación']):
+        elif any(keyword in description_lower for keyword in ['api', 'rest', 'jwt', 'autenticación']):
             return "Backend Developer"
+        elif any(keyword in description_lower for keyword in ['aws', 'lambda', 'scaling', 'infraestructura']):
+            return "Cloud Engineer"
         else:
-            return "Full Stack Developer"
+            return "Full Stack Developer"  # Default
+
+# REFACTOR: Aplicamos Strategy Pattern y mejoramos la clasificación
+class RequirementClassificationStrategy(ABC):
+    @abstractmethod
+    def classify(self, description: str) -> str:
+        pass
+
+class KeywordBasedClassifier(RequirementClassificationStrategy):
+    """✅ TDD REFACTOR - Estrategia de clasificación basada en keywords."""
+    
+    def __init__(self):
+        self.role_keywords = {
+            'Frontend Developer': ['react', 'vue', 'angular', 'ui', 'interface', 'css', 'html', 'responsive'],
+            'Backend Developer': ['api', 'rest', 'graphql', 'database', 'sql', 'jwt', 'auth', 'server'],
+            'Cloud Engineer': ['aws', 'azure', 'gcp', 'docker', 'kubernetes', 'lambda', 'scaling'],
+            'UX Designer': ['ux', 'ui/ux', 'usabilidad', 'usuario', 'diseño', 'mockup']
+        }
+    
+    def classify(self, description: str) -> str:
+        description_lower = description.lower()
+        
+        for role, keywords in self.role_keywords.items():
+            if any(keyword in description_lower for keyword in keywords):
+                return role
+        
+        return "Full Stack Developer"
+
+class RoleAssignmentFactory:
+    """✅ TDD REFACTOR - Factory mejorado con Strategy Pattern."""
+    
+    def __init__(self, classifier: RequirementClassificationStrategy = None):
+        self.classifier = classifier or KeywordBasedClassifier()
+    
+    def get_assignee_for_requirement(self, requirement: Requisito) -> str:
+        """Método refactorizado que mantiene los tests verdes."""
+        return self.classifier.classify(requirement.descripcion)
+```
+
+### 1.4. TDD para RNF5.0 - Tolerancia a Fallos (Circuit Breaker)
+
+```python path=null start=null
+# ✅ TDD para Circuit Breaker Pattern
+class TestCircuitBreaker:
+    """TDD para RNF5.0 - Tolerancia a Fallos."""
+    
+    def test_should_allow_calls_when_circuit_is_closed(self):
+        """RED: Test para comportamiento normal del circuit breaker."""
+        # Given
+        circuit_breaker = CircuitBreaker(failure_threshold=3)
+        
+        def successful_service_call():
+            return "success"
+        
+        # When
+        result = circuit_breaker.call(successful_service_call)
+        
+        # Then
+        assert result == "success"
+        assert circuit_breaker.state == CircuitState.CLOSED
+    
+    def test_should_open_circuit_after_failure_threshold(self):
+        """RED: Test para apertura del circuito tras fallos."""
+        # Given
+        circuit_breaker = CircuitBreaker(failure_threshold=3)
+        
+        def failing_service_call():
+            raise TranscriptionServiceException("Service unavailable")
+        
+        # When - Ejecutar 3 fallos (threshold)
+        for _ in range(3):
+            with pytest.raises(TranscriptionServiceException):
+                circuit_breaker.call(failing_service_call)
+        
+        # Then
+        assert circuit_breaker.state == CircuitState.OPEN
+    
+    def test_should_reject_calls_when_circuit_is_open(self):
+        """RED: Test para rechazo de calls cuando circuito está abierto."""
+        # Given
+        circuit_breaker = CircuitBreaker(failure_threshold=1)
+        circuit_breaker.state = CircuitState.OPEN
+        
+        def any_service_call():
+            return "should not execute"
+        
+        # When & Then
+        with pytest.raises(CircuitBreakerOpenException):
+            circuit_breaker.call(any_service_call)
+    
+    def test_should_attempt_half_open_after_timeout(self):
+        """RED: Test para transición a half-open tras timeout."""
+        # Given
+        circuit_breaker = CircuitBreaker(failure_threshold=1, timeout=1)
+        circuit_breaker.state = CircuitState.OPEN
+        circuit_breaker.last_failure_time = time.time() - 2  # 2 segundos atrás
+        
+        def recovery_test_call():
+            return "recovered"
+        
+        # When
+        result = circuit_breaker.call(recovery_test_call)
+        
+        # Then
+        assert result == "recovered"
+        assert circuit_breaker.state == CircuitState.CLOSED
+
+# GREEN & REFACTOR: Implementación del Circuit Breaker
+from enum import Enum
+import time
+
+class CircuitState(Enum):
+    CLOSED = "closed"
+    OPEN = "open" 
+    HALF_OPEN = "half_open"
+
+class CircuitBreaker:
+    """✅ TDD - Circuit Breaker implementado siguiendo TDD."""
+    
+    def __init__(self, failure_threshold: int = 3, timeout: int = 60):
+        self.failure_threshold = failure_threshold
+        self.timeout = timeout
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = CircuitState.CLOSED
+    
+    def call(self, func, *args, **kwargs):
+        """✅ TDD - Método principal que satisface todos los tests."""
+        if self.state == CircuitState.OPEN:
+            if self._should_attempt_reset():
+                self.state = CircuitState.HALF_OPEN
+            else:
+                raise CircuitBreakerOpenException("Circuit breaker is OPEN")
+        
+        try:
+            result = func(*args, **kwargs)
+            self._on_success()
+            return result
+        except Exception as e:
+            self._on_failure()
+            raise e
+    
+    def _should_attempt_reset(self) -> bool:
+        """Verifica si debe intentar resetear el circuito."""
+        if self.last_failure_time is None:
+            return True
+        return (time.time() - self.last_failure_time) >= self.timeout
+    
+    def _on_success(self):
+        """Maneja el éxito de una llamada."""
+        self.failure_count = 0
+        self.state = CircuitState.CLOSED
+    
+    def _on_failure(self):
+        """Maneja el fallo de una llamada."""
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        
+        if self.failure_count >= self.failure_threshold:
+            self.state = CircuitState.OPEN
 ```
 
 ---
@@ -194,8 +447,9 @@ class RoleAssignmentFactory:
 **TDD facilita SRP porque cada test se enfoca en una responsabilidad específica.**
 
 ```python path=null start=null
+# ✅ TDD + SRP - Cada clase tiene una sola razón para cambiar
 class TestTranscriptionService:
-    """✅ TDD para servicio con responsabilidad única: transcripción."""
+    """TDD para servicio con responsabilidad única: transcripción."""
     
     def test_should_transcribe_audio_file_successfully(self):
         """Test enfocado en una sola responsabilidad."""
@@ -209,20 +463,42 @@ class TestTranscriptionService:
         # Then
         assert isinstance(result, str)
         assert len(result) > 0
+    
+    def test_should_handle_audio_file_too_large(self):
+        """Test para manejo de archivos grandes."""
+        # Given
+        transcription_service = TranscriptionService(deepgram_client=Mock())
+        large_audio = AudioFile(url="http://example.com/large.mp3", size_mb=100)
+        
+        # When & Then
+        with pytest.raises(AudioFileTooLargeException):
+            transcription_service.transcribe(large_audio)
 
 class TranscriptionService:
     """✅ SRP - Solo se encarga de transcripción de audio."""
     
+    def __init__(self, deepgram_client):
+        self.deepgram_client = deepgram_client
+        self.max_file_size_mb = 50  # Límite de tamaño
+    
     def transcribe(self, audio_file: AudioFile) -> str:
-        """Unica responsabilidad: transcribir audio a texto."""
+        """Única responsabilidad: transcribir audio a texto."""
         self._validate_audio_file(audio_file)
         
+        # Llamada a Deepgram API
         response = self.deepgram_client.transcription.prerecorded(
             {'url': audio_file.url},
             {'punctuate': True, 'model': 'nova'}
         )
         
         return self._extract_transcript_text(response)
+    
+    def _validate_audio_file(self, audio_file: AudioFile) -> None:
+        """Validación específica para transcripción."""
+        if audio_file.size_mb > self.max_file_size_mb:
+            raise AudioFileTooLargeException(
+                f"Audio file too large: {audio_file.size_mb}MB > {self.max_file_size_mb}MB"
+            )
 ```
 
 ### 2.2. TDD + Dependency Inversion Principle (DIP)
@@ -230,478 +506,89 @@ class TranscriptionService:
 **TDD promueve DIP porque facilita el uso de mocks y abstracciones.**
 
 ```python path=null start=null
+# ✅ TDD + DIP - Tests usando abstracciones
 class TestPRDGenerationService:
-    """✅ TDD que promueve inversión de dependencias."""
+    """TDD que promueve inversión de dependencias."""
     
     @pytest.fixture
     def mock_requirement_extractor(self):
+        """Mock de la abstracción."""
         mock = Mock(spec=RequirementExtractor)
         mock.extract_requirements.return_value = [
-            Requisito(id="req-1", descripcion="Test requirement")
+            Requisito(id="req-1", descripcion="Test requirement", tipo=RequirementType.FUNCTIONAL)
         ]
         return mock
     
+    @pytest.fixture
+    def mock_template_generator(self):
+        """Mock de generador de templates."""
+        mock = Mock(spec=TemplateGenerator)
+        mock.generate_prd_template.return_value = "# Test PRD Template"
+        return mock
+    
     def test_should_generate_prd_from_transcription(
-        self, mock_requirement_extractor
+        self, 
+        mock_requirement_extractor, 
+        mock_template_generator
     ):
         """TDD usando abstracciones (DIP)."""
         # Given
         prd_service = PRDGenerationService(
-            requirement_extractor=mock_requirement_extractor  # ✅ DIP
+            requirement_extractor=mock_requirement_extractor,  # ✅ DIP
+            template_generator=mock_template_generator         # ✅ DIP  
         )
-        transcription = "We need user authentication"
+        transcription = "We need to implement user authentication and dashboard"
         
         # When
         prd = prd_service.generate_prd(transcription)
         
         # Then
         assert prd is not None
+        assert prd.titulo is not None
         assert len(prd.requirements) > 0
-        mock_requirement_extractor.extract_requirements.assert_called_once()
+        
+        # Verificar que usa las abstracciones
+        mock_requirement_extractor.extract_requirements.assert_called_once_with(transcription)
+        mock_template_generator.generate_prd_template.assert_called_once()
+
+# Abstracciones que facilitan testing
+class RequirementExtractor(Protocol):
+    def extract_requirements(self, text: str) -> List[Requisito]: pass
+
+class TemplateGenerator(Protocol):
+    def generate_prd_template(self, requirements: List[Requisito]) -> str: pass
 
 class PRDGenerationService:
     """✅ DIP - Depende de abstracciones, no de implementaciones concretas."""
     
-    def __init__(self, requirement_extractor: RequirementExtractor):
-        self.requirement_extractor = requirement_extractor  # ✅ DIP
+    def __init__(
+        self, 
+        requirement_extractor: RequirementExtractor,
+        template_generator: TemplateGenerator
+    ):
+        # ✅ DIP - Dependencias inyectadas como abstracciones
+        self.requirement_extractor = requirement_extractor
+        self.template_generator = template_generator
     
     def generate_prd(self, transcription: str) -> PRD:
+        """Genera PRD usando dependencias abstraídas."""
         requirements = self.requirement_extractor.extract_requirements(transcription)
-        return PRD(requirements=requirements)
-```
-
----
-
-## 3. Estrategias de Arquitectura: Clean Architecture (Guiada por TDD)
-
-### 3.1. TDD para Use Cases (Application Layer)
-
-```python path=null start=null
-class TestProcessMeetingUseCase:
-    """✅ TDD para caso de uso principal del sistema."""
-    
-    def test_should_execute_complete_meeting_processing_flow(self):
-        """RED: Test que define el flujo completo."""
-        # Given - Setup con dependencias mockeadas
-        deps = {
-            'meeting_repository': Mock(spec=MeetingRepository),
-            'transcription_service': Mock(spec=TranscriptionService),
-            'prd_generator': Mock(spec=PRDGenerationService)
-        }
-        use_case = ProcessMeetingUseCase(**deps)
         
-        command = ProcessMeetingCommand(
-            meeting_id="meeting-123",
-            audio_url="https://example.com/audio.mp3"
-        )
+        if not requirements:
+            raise ValueError("No requirements found in transcription")
         
-        # When
-        response = use_case.execute(command)
+        template = self.template_generator.generate_prd_template(requirements)
         
-        # Then - Verificar comportamiento completo
-        assert response.success is True
-        assert response.processing_time_seconds < 300  # RNF1.0
-        deps['meeting_repository'].get_by_id.assert_called_once()
-
-class ProcessMeetingUseCase:
-    """
-    ✅ Clean Architecture + TDD - Use Case en Application Layer.
-    Orquesta el flujo sin conocer detalles de implementación.
-    """
-    
-    def execute(self, command: ProcessMeetingCommand) -> ProcessMeetingResponse:
-        # 1. Recuperar reunión (Infrastructure)
-        meeting = self._meeting_repository.get_by_id(command.meeting_id)
-        
-        # 2. Transcribir audio (Infrastructure)
-        transcription = self._transcription_service.transcribe(meeting.audio_url)
-        
-        # 3. Generar PRD (Domain Service)
-        prd = self._prd_generator.generate_prd(transcription)
-        
-        # 4. Crear tareas (Domain Logic)
-        tasks = self._create_tasks_from_prd(prd)
-        
-        return ProcessMeetingResponse(success=True, prd=prd, tasks=tasks)
-```
-
----
-
-## 4. Bases de Datos: Principios ACID (Validados con TDD)
-
-### 4.1. TDD para Transacciones ACID
-
-```python path=null start=null
-class TestDatabaseTransactionManager:
-    """✅ TDD para gestión de transacciones ACID."""
-    
-    def test_should_commit_transaction_when_successful(self, db_manager):
-        """RED: Test para propiedad ATOMICITY y DURABILITY."""
-        # Given
-        meeting = Meeting(id="meeting-123", audio_url="http://example.com/audio.mp3")
-        prd = PRD(id="prd-456", titulo="Test PRD")
-        
-        # When
-        with db_manager.transaction() as session:
-            session.add(meeting)
-            session.add(prd)
-        
-        # Then - Verificar DURABILITY
-        with db_manager.transaction() as session:
-            saved_meeting = session.get(Meeting, "meeting-123")
-            assert saved_meeting is not None
-    
-    def test_should_rollback_transaction_when_error_occurs(self, db_manager):
-        """RED: Test para propiedad ATOMICITY en caso de error."""
-        # Given & When
-        with pytest.raises(ValueError):
-            with db_manager.transaction() as session:
-                meeting = Meeting(id="meeting-123")
-                session.add(meeting)
-                raise ValueError("Simulated error")  # Debe causar rollback
-        
-        # Then - Verificar ATOMICITY (rollback)
-        with db_manager.transaction() as session:
-            saved_meeting = session.get(Meeting, "meeting-123")
-            assert saved_meeting is None  # No debe existir por rollback
-
-class DatabaseTransactionManager:
-    """✅ TDD - Gestor que garantiza propiedades ACID."""
-    
-    @contextmanager
-    def transaction(self) -> Generator[Session, None, None]:
-        """
-        ✅ ACID Context Manager que garantiza:
-        - ATOMICITY: Todo o nada mediante commit/rollback
-        - CONSISTENCY: Validaciones antes del commit
-        - ISOLATION: Sesiones aisladas por transacción
-        - DURABILITY: Cambios persistentes tras commit exitoso
-        """
-        session = self.SessionLocal()
-        try:
-            yield session
-            session.commit()  # ✅ ATOMICITY & DURABILITY
-        except Exception as e:
-            session.rollback()  # ✅ ATOMICITY - Todo o nada
-            raise e
-        finally:
-            session.close()  # ✅ ISOLATION
-```
-
----
-
-## 5. Resumen de Implementación TDD + Arquitectura
-
-### 5.1. Checklist de Principios Aplicados con TDD
-
-| Principio/Patrón | ✅ Con TDD | Beneficio del TDD |
-|------------------|------------|-------------------|
-| **SRP (Single Responsibility)** | ✅ | Tests específicos fuerzan responsabilidades claras |
-| **OCP (Open/Closed)** | ✅ | Mocks facilitan extensión sin modificar código existente |
-| **DIP (Dependency Inversion)** | ✅ | TDD promueve naturalmente inyección de dependencias |
-| **Factory Pattern** | ✅ | Tests definen comportamiento antes de implementar factory |
-| **Strategy Pattern** | ✅ | TDD facilita intercambio de algoritmos via mocks |
-| **Circuit Breaker** | ✅ | Tests validan estados y transiciones del circuito |
-| **ACID Principles** | ✅ | Tests verifican propiedades transaccionales |
-| **Clean Architecture** | ✅ | TDD fuerza separación clara de capas |
-| **Clean Code** | ✅ | TDD fuerza nombres descriptivos y funciones pequeñas |
-
-### 5.2. Flujo de Desarrollo TDD Recomendado
-
-```
-🔴 RED: Escribir test que falle → 🟢 GREEN: Código mínimo que pase → 🔵 REFACTOR: Aplicar principios SOLID
-                                                                       ↓
-                                             Aplicar Clean Architecture, Design Patterns, ACID
-```
-
-### 5.3. Scripts de Desarrollo TDD
-
-```bash path=null start=null
-#!/bin/bash
-# ✅ TDD - Scripts para flujo de desarrollo
-
-# Ejecutar tests en modo watch (TDD continuo)
-tdd_watch() {
-    echo "🔄 Iniciando TDD Watch Mode..."
-    pytest --watch tests/ --verbose --tb=short
-}
-
-# Ejecutar ciclo TDD completo
-tdd_cycle() {
-    echo "🔴 RED: Ejecutando tests (deben fallar)..."
-    pytest tests/ --tb=short
-    
-    echo "🟢 GREEN: Implementar código mínimo"
-    echo "🔵 REFACTOR: Aplicar principios de arquitectura"
-    
-    echo "✅ Ejecutando tests finales..."
-    pytest tests/ --verbose --cov=src/
-}
-
-# Validar cobertura de tests
-validate_coverage() {
-    echo "📈 Validando cobertura de tests..."
-    pytest --cov=src/ --cov-report=html --cov-fail-under=80
-    echo "Reporte HTML generado en htmlcov/"
-}
-```
-
----
-
-## 6. Clean Code: Buenas Prácticas Potenciadas por TDD
-
-### 6.1. TDD + Nombres Descriptivos
-
-**TDD fuerza nombres de métodos y variables más descriptivos.**
-
-```python path=null start=null
-class TestTaskAssignmentRules:
-    """✅ TDD - Nombres descriptivos facilitan comprensión del comportamiento."""
-    
-    def test_should_assign_backend_tasks_to_senior_developer_when_complexity_is_high(self):
-        """Nombre del test describe EXACTAMENTE el comportamiento esperado."""
-        # Given
-        task = Task(
-            title="Implement OAuth2 authentication service",
-            complexity_level=ComplexityLevel.HIGH,
-            technology_stack=["Python", "FastAPI", "OAuth2"]
-        )
-        senior_backend_dev = Developer(
-            name="Alice Smith",
-            experience_level=ExperienceLevel.SENIOR,
-            specialization=Specialization.BACKEND
-        )
-        team = Team([senior_backend_dev])
-        
-        # When
-        assigned_developer = TaskAssignmentRules.assign_developer_for_task(
-            task=task,
-            available_team=team
-        )
-        
-        # Then
-        assert assigned_developer == senior_backend_dev
-        assert assigned_developer.can_handle_complexity(ComplexityLevel.HIGH)
-
-class TaskAssignmentRules:
-    """✅ Clean Code - Nombres de clase y métodos descriptivos."""
-    
-    @staticmethod
-    def assign_developer_for_task(
-        task: Task, 
-        available_team: Team
-    ) -> Developer:
-        """✅ Nombre descriptivo explica propósito del método."""
-        
-        suitable_developers = [
-            dev for dev in available_team.members 
-            if dev.can_handle_technology_stack(task.technology_stack) 
-            and dev.can_handle_complexity(task.complexity_level)
-        ]
-        
-        return TaskAssignmentOptimizer.select_best_match(
-            candidates=suitable_developers,
-            task_requirements=task
+        return PRD(
+            id=self._generate_prd_id(),
+            titulo=self._generate_title_from_requirements(requirements),
+            requirements=requirements,
+            template_content=template,
+            fecha_creacion=datetime.now()
         )
 ```
 
-### 6.2. TDD + Gestión de Configuración
-
-```python path=null start=null
-class TestConfigurationManager:
-    """✅ TDD para gestión de configuración siguiendo 12-Factor App."""
-    
-    def test_should_load_database_config_from_environment_variables(self):
-        """RED: Test para configuración desde variables de entorno."""
-        # Given
-        os.environ.update({
-            'DATABASE_URL': 'postgresql://user:pass@localhost:5432/testdb',
-            'REDIS_URL': 'redis://localhost:6379/0',
-            'DEEPGRAM_API_KEY': 'test-api-key'
-        })
-        
-        # When
-        config = ConfigurationManager.load_from_environment()
-        
-        # Then
-        assert config.database_url == 'postgresql://user:pass@localhost:5432/testdb'
-        assert config.redis_url == 'redis://localhost:6379/0'
-        assert config.deepgram_api_key == 'test-api-key'
-    
-    def test_should_raise_error_when_required_config_is_missing(self):
-        """RED: Test para validar configuración requerida."""
-        # Given - Environment sin DATABASE_URL
-        if 'DATABASE_URL' in os.environ:
-            del os.environ['DATABASE_URL']
-        
-        # When & Then
-        with pytest.raises(MissingRequiredConfigurationError) as exc_info:
-            ConfigurationManager.load_from_environment()
-        
-        assert "DATABASE_URL is required" in str(exc_info.value)
-
-class ConfigurationManager:
-    """✅ Clean Code - Gestión centralizada de configuración."""
-    
-    @staticmethod
-    def load_from_environment() -> AppConfiguration:
-        """✅ 12-Factor App - Configuración desde variables de entorno."""
-        required_vars = {
-            'DATABASE_URL': 'Database connection URL',
-            'REDIS_URL': 'Redis connection URL',
-            'DEEPGRAM_API_KEY': 'Deepgram API key for transcription'
-        }
-        
-        missing_vars = [
-            var_name for var_name in required_vars.keys() 
-            if not os.getenv(var_name)
-        ]
-        
-        if missing_vars:
-            raise MissingRequiredConfigurationError(
-                f"Required environment variables missing: {', '.join(missing_vars)}"
-            )
-        
-        return AppConfiguration(
-            database_url=os.getenv('DATABASE_URL'),
-            redis_url=os.getenv('REDIS_URL'),
-            deepgram_api_key=os.getenv('DEEPGRAM_API_KEY')
-        )
-```
-
----
-
-## 🚨 ADVERTENCIAS CRÍTICAS: Limitaciones del TDD con Asistencia de IA
-
-### ⚠️ 1. Limitaciones del TDD con Large Language Models (LLMs)
-
-**ADVERTENCIA CRÍTICA**: Los LLMs pueden generar tests que parecen correctos pero contienen errores sutiles o no cubren casos edge importantes.
-
-```python path=null start=null
-# ❌ RIESGO: Test generado por IA que parece correcto pero es incompleto
-class TestTranscriptionService:  # Generado por IA
-    def test_transcribe_audio(self):
-        service = TranscriptionService()
-        result = service.transcribe("audio.mp3")
-        assert result is not None  # ❌ Assertion demasiado genérica
-
-# ✅ CORRECTO: Test revisado por humano con casos edge
-class TestTranscriptionService:
-    def test_should_handle_empty_audio_file_gracefully(self):
-        service = TranscriptionService()
-        with pytest.raises(InvalidAudioFileError):
-            service.transcribe("")  # ✅ Caso edge identificado por humano
-    
-    def test_should_handle_corrupted_audio_file(self):
-        # ✅ Caso que IA podría no considerar automáticamente
-        pass
-```
-
-### ⚠️ 2. Proceso de Validación Humana Obligatoria
-
-**PROCEDIMIENTO OBLIGATORIO**:
-1. **Revisión de Tests por Experto Senior**: Todo test generado por IA debe ser revisado
-2. **Validación de Casos Edge**: Humano debe identificar casos no cubiertos
-3. **Revisión de Lógica de Negocio**: IA puede malinterpretar requisitos de dominio
-4. **Testing Manual Complementario**: Tests exploratorios dirigidos por humanos
-
-### ⚠️ 3. Áreas de Especial Cuidado
-
-| Área | Riesgo de IA | Mitigación Requerida |
-|------|--------------|----------------------|
-| **Seguridad** | IA puede no identificar vulnerabilidades sutiles | Auditoría de seguridad manual |
-| **Concurrencia** | Tests de condiciones de carrera incompletos | Testing de carga y estrés manual |
-| **Integración** | Mocks que no reflejan comportamiento real | Testing de integración en entornos reales |
-| **Performance** | Assertions de rendimiento poco realistas | Profiling y benchmarking manual |
-| **UX/UI** | No puede evaluar usabilidad real | Testing de usuario final |
-
----
-
-## 📋 Conclusiones y Siguientes Pasos
-
-### 🎯 Implementación Práctica del TDD + Arquitectura
-
-**Este documento establece el fundamento arquitectónico para el proyecto M2PRD-001**, integrando TDD como metodología central con principios de Clean Architecture, SOLID, y diseño de software escalable.
-
-### 🚀 Roadmap de Desarrollo Recomendado
-
-1. **Fase 1**: Setup de entorno TDD
-   - Configurar pytest, coverage, y herramientas de testing
-   - Implementar scripts de desarrollo (tdd_watch, quality_check)
-   - Definir estructura de tests siguiendo Clean Architecture
-
-2. **Fase 2**: Implementación Core (Domain Layer)
-   - Desarrollar entidades de dominio con TDD
-   - Implementar value objects y agregados
-   - Crear servicios de dominio con business logic
-
-3. **Fase 3**: Casos de Uso (Application Layer)
-   - TDD para casos de uso principales (ProcessMeeting, GeneratePRD)
-   - Implementar command/query handlers
-   - Integrar validaciones y reglas de negocio
-
-4. **Fase 4**: Infraestructura (Infrastructure Layer)
-   - TDD para repositorios y adaptadores
-   - Implementar integración con servicios externos (Deepgram, OpenAI)
-   - Configurar base de datos y migraciones
-
-5. **Fase 5**: Validación y Deploy
-   - Testing de integración y end-to-end
-   - Performance testing y optimización
-   - Deploy con monitoring y observabilidad
-
-### ⚡ Herramientas de Desarrollo Recomendadas
-
-```bash path=null start=null
-# Configuración de entorno de desarrollo TDD
-pip install pytest pytest-cov pytest-watch black isort mypy
-npm install -g @commitlint/cli @commitlint/config-conventional
-
-# Scripts de calidad de código
-echo "alias tdd='pytest --watch'" >> ~/.bashrc
-echo "alias quality='black . && isort . && mypy . && pytest --cov'" >> ~/.bashrc
-```
-
----
-
-**Documento creado por**: Arquitecto Senior + TDD Expert  
-**Fecha**: $(date)  
-**Versión**: 3.0 - TDD Enhanced  
-**Proyecto**: M2PRD-001 - Meet-Teams-to-PRD
-
-### 1.1. Single Responsibility Principle (SRP)
-
-**Aplicación en M2PRD-001:**
-- **Módulo IA/NLP**: Se enfoca exclusivamente en procesamiento de lenguaje natural
-- **Extensión Chrome**: Responsabilidad única de capturar eventos de reuniones
-- **Webhook Service**: Solo recibe y valida requests HTTP
-- **Orquestador (n8n/Make)**: Únicamente coordina flujos de trabajo
-
-**Implementación Práctica:**
-```python path=null start=null
-# ❌ VIOLACIÓN SRP - Clase con múltiples responsabilidades
-class MeetingProcessor:
-    def capture_audio(self): pass
-    def transcribe_audio(self): pass
-    def generate_prd(self): pass
-    def assign_tasks(self): pass
-    def send_notifications(self): pass
-
-# ✅ CUMPLE SRP - Responsabilidades separadas
-class AudioCaptureService:
-    def capture_audio_from_meeting(self, meeting_url): pass
-
-class TranscriptionService:
-    def transcribe_audio(self, audio_file): pass
-
-class PRDGenerationService:
-    def generate_prd(self, transcription): pass
-
-class TaskAssignmentService:
-    def assign_tasks_to_roles(self, requirements): pass
-```
-
-### 1.2. Open/Closed Principle (OCP)
+### 2.3. Open/Closed Principle (OCP)
 
 **Implementación para RF5.0 - Integración con PMS:**
 ```python path=null start=null
@@ -723,6 +610,11 @@ class TrelloIntegration(PMSIntegration):
         # Implementación específica para Trello
         pass
 
+class LinearIntegration(PMSIntegration):
+    def create_task(self, requirement: Requisito) -> TareaAsignada:
+        # Nueva integración sin modificar código existente
+        pass
+
 # Factory Pattern para extensibilidad
 class PMSIntegrationFactory:
     _integrations = {
@@ -736,7 +628,109 @@ class PMSIntegrationFactory:
         return cls._integrations[pms_type]()
 ```
 
-### 1.3. Clean Architecture Layers
+### 2.4. Liskov Substitution Principle (LSP)
+
+**Aplicación en Jerarquía de Requisitos:**
+```python path=null start=null
+class Requisito(ABC):
+    def __init__(self, descripcion: str, prioridad: str):
+        self.descripcion = descripcion
+        self.prioridad = prioridad
+    
+    @abstractmethod
+    def generar_tarea(self) -> TareaAsignada:
+        pass
+
+class RequisitoFuncional(Requisito):
+    def generar_tarea(self) -> TareaAsignada:
+        # ✅ CUMPLE LSP - Comportamiento consistente con clase base
+        return TareaAsignada(
+            tipo="funcional",
+            descripcion=self.descripcion,
+            prioridad=self.prioridad
+        )
+
+class RequisitoNoFuncional(Requisito):
+    def generar_tarea(self) -> TareaAsignada:
+        # ✅ CUMPLE LSP - Comportamiento consistente con clase base
+        return TareaAsignada(
+            tipo="no_funcional", 
+            descripcion=self.descripcion,
+            prioridad=self.prioridad
+        )
+```
+
+### 2.5. Interface Segregation Principle (ISP)
+
+**Interfaces Específicas para Diferentes Responsabilidades:**
+```python path=null start=null
+# ✅ CUMPLE ISP - Interfaces específicas y cohesivas
+class AudioProcessable(Protocol):
+    def process_audio(self, audio_data: bytes) -> str:
+        pass
+
+class TextAnalyzable(Protocol):
+    def extract_requirements(self, text: str) -> List[Requisito]:
+        pass
+
+class TaskAssignable(Protocol):
+    def assign_to_role(self, requirement: Requisito) -> str:
+        pass
+
+class NotificationSender(Protocol):
+    def send_notification(self, message: str, recipient: str):
+        pass
+
+# Implementación que solo depende de interfaces necesarias
+class PRDGenerationService:
+    def __init__(
+        self, 
+        text_analyzer: TextAnalyzable,
+        task_assigner: TaskAssignable,
+        notifier: NotificationSender
+    ):
+        # ✅ Solo depende de interfaces que realmente usa
+        self.text_analyzer = text_analyzer
+        self.task_assigner = task_assigner  
+        self.notifier = notifier
+```
+
+### 2.6. KISS Principle (Keep It Simple, Stupid)
+
+**Aplicación en Diseño de Componentes:**
+```python path=null start=null
+# ❌ VIOLACIÓN KISS - Complejidad innecesaria
+class ComplexMeetingProcessor:
+    def process_with_multiple_algorithms(self, audio):
+        # Implementación con múltiples algoritmos, caching complejo,
+        # optimizaciones prematuras, configuraciones excesivas
+        pass
+
+# ✅ CUMPLE KISS - Implementación simple y directa
+class MeetingProcessor:
+    def __init__(self, transcription_service: TranscriptionService):
+        self.transcription_service = transcription_service
+    
+    def process_meeting(self, audio_url: str) -> PRD:
+        """Procesa una reunión de forma simple y directa."""
+        transcription = self.transcription_service.transcribe(audio_url)
+        requirements = self._extract_requirements(transcription)
+        return self._generate_prd(requirements)
+    
+    def _extract_requirements(self, transcription: str) -> List[Requisito]:
+        # Implementación simple usando bibliotecas estándar
+        pass
+    
+    def _generate_prd(self, requirements: List[Requisito]) -> PRD:
+        # Generación directa del PRD
+        pass
+```
+
+---
+
+## 3. Estrategias de Arquitectura: Clean Architecture (Guiada por TDD)
+
+### 3.1. Capas de Clean Architecture
 
 **Aplicación en M2PRD-001:**
 
@@ -744,7 +738,7 @@ class PMSIntegrationFactory:
 ┌─────────────────────────────────────────────┐
 │ UI/Controllers (Presentation Layer)         │
 │ • Chrome Extension                          │
-│ • Webhook Endpoints                         │ 
+│ • Webhook Endpoints                         │
 │ • n8n/Make Workflows                        │
 ├─────────────────────────────────────────────┤
 │ Application Services (Use Cases)            │
@@ -764,10 +758,407 @@ class PMSIntegrationFactory:
 └─────────────────────────────────────────────┘
 ```
 
-## 2. Patrones de Diseño Aplicados
+### 3.2. TDD para Use Cases (Application Layer)
 
-### 2.1. Factory Pattern para RF4.0 - Asignación Inteligente
+```python path=null start=null
+# ✅ TDD para Use Cases - Application Layer
+class TestProcessMeetingUseCase:
+    """TDD para caso de uso principal del sistema."""
+    
+    @pytest.fixture
+    def setup_use_case_dependencies(self):
+        """Setup con todas las dependencias mockeadas."""
+        return {
+            'meeting_repository': Mock(spec=MeetingRepository),
+            'transcription_service': Mock(spec=TranscriptionService), 
+            'prd_generator': Mock(spec=PRDGenerationService),
+            'task_repository': Mock(spec=TaskRepository),
+            'event_publisher': Mock(spec=EventPublisher)
+        }
+    
+    def test_should_execute_complete_meeting_processing_flow(self, setup_use_case_dependencies):
+        """RED: Test que define el flujo completo."""
+        # Given
+        deps = setup_use_case_dependencies
+        use_case = ProcessMeetingUseCase(**deps)
+        
+        command = ProcessMeetingCommand(
+            meeting_id="meeting-123",
+            audio_url="https://example.com/audio.mp3",
+            requester_id="user-456"
+        )
+        
+        # Setup mocks
+        mock_meeting = Meeting(id="meeting-123", audio_url=command.audio_url)
+        deps['meeting_repository'].get_by_id.return_value = mock_meeting
+        deps['transcription_service'].transcribe.return_value = "Mock transcription"
+        
+        mock_prd = PRD(id="prd-789", titulo="Test PRD")
+        deps['prd_generator'].generate_prd.return_value = mock_prd
+        
+        # When
+        response = use_case.execute(command)
+        
+        # Then - Verificar comportamiento completo
+        assert response.success is True
+        assert response.prd == mock_prd
+        assert response.processing_time_seconds < 300  # RNF1.0
+        
+        # Verificar secuencia de llamadas (Clean Architecture)
+        deps['meeting_repository'].get_by_id.assert_called_once_with("meeting-123")
+        deps['transcription_service'].transcribe.assert_called_once()
+        deps['prd_generator'].generate_prd.assert_called_once()
+        deps['event_publisher'].publish.assert_called_once()
 
+# GREEN: Implementación del Use Case
+from dataclasses import dataclass
+from typing import List
+import time
+
+@dataclass
+class ProcessMeetingCommand:
+    """Command pattern para entrada del use case."""
+    meeting_id: str
+    audio_url: str
+    requester_id: str
+
+@dataclass  
+class ProcessMeetingResponse:
+    """Response con resultado del procesamiento."""
+    success: bool
+    prd: PRD = None
+    tasks: List[TareaAsignada] = None
+    processing_time_seconds: float = 0.0
+    error_message: str = None
+
+class ProcessMeetingUseCase:
+    """
+    ✅ Clean Architecture + TDD - Use Case en Application Layer.
+    
+    Orquesta el flujo de procesamiento sin conocer detalles de implementación.
+    """
+    
+    def __init__(
+        self,
+        meeting_repository: MeetingRepository,
+        transcription_service: TranscriptionService,
+        prd_generator: PRDGenerationService,
+        task_repository: TaskRepository,
+        event_publisher: EventPublisher
+    ):
+        # ✅ Clean Architecture - Dependencias del dominio e infraestructura
+        self._meeting_repository = meeting_repository
+        self._transcription_service = transcription_service
+        self._prd_generator = prd_generator
+        self._task_repository = task_repository
+        self._event_publisher = event_publisher
+    
+    def execute(self, command: ProcessMeetingCommand) -> ProcessMeetingResponse:
+        """✅ TDD GREEN - Implementación que satisface el test."""
+        start_time = time.time()
+        
+        try:
+            # 1. Validar comando
+            self._validate_command(command)
+            
+            # 2. Recuperar reunión (Infrastructure)
+            meeting = self._meeting_repository.get_by_id(command.meeting_id)
+            if not meeting:
+                raise MeetingNotFoundException(f"Meeting {command.meeting_id} not found")
+            
+            # 3. Transcribir audio (Infrastructure)
+            transcription = self._transcription_service.transcribe(meeting.audio_url)
+            
+            # 4. Generar PRD (Domain Service)
+            prd = self._prd_generator.generate_prd(transcription)
+            
+            # 5. Crear tareas (Domain Logic)
+            tasks = self._create_tasks_from_prd(prd)
+            
+            # 6. Persistir resultados (Infrastructure)
+            self._task_repository.save_all(tasks)
+            
+            # 7. Publicar evento (Infrastructure)
+            processing_time = time.time() - start_time
+            
+            self._event_publisher.publish(
+                MeetingProcessedEvent(
+                    meeting_id=command.meeting_id,
+                    prd_id=prd.id,
+                    task_ids=[task.id for task in tasks],
+                    processing_time_seconds=processing_time
+                )
+            )
+            
+            return ProcessMeetingResponse(
+                success=True,
+                prd=prd,
+                tasks=tasks,
+                processing_time_seconds=processing_time
+            )
+            
+        except Exception as e:
+            return ProcessMeetingResponse(
+                success=False,
+                error_message=str(e),
+                processing_time_seconds=time.time() - start_time
+            )
+    
+    def _validate_command(self, command: ProcessMeetingCommand) -> None:
+        """Validación de entrada del comando."""
+        if not command.meeting_id:
+            raise ValueError("Meeting ID is required")
+        if not command.audio_url:
+            raise ValueError("Audio URL is required")
+    
+    def _create_tasks_from_prd(self, prd: PRD) -> List[TareaAsignada]:
+        """Lógica de dominio para crear tareas."""
+        return [req.generar_tarea() for req in prd.requirements]
+```
+
+### 3.3. TDD para Domain Entities (Domain Layer)
+
+```python path=null start=null
+# ✅ TDD para Entidades de Dominio
+class TestPRDEntity:
+    """TDD para entidad PRD con lógica de dominio rica."""
+    
+    def test_should_create_prd_with_valid_requirements(self):
+        """RED: Test para creación válida de PRD."""
+        # Given
+        requirements = [
+            Requisito(id="req-1", descripcion="User auth", tipo=RequirementType.FUNCTIONAL),
+            Requisito(id="req-2", descripcion="Dashboard UI", tipo=RequirementType.FUNCTIONAL)
+        ]
+        
+        # When
+        prd = PRD(
+            id="prd-123",
+            titulo="User Management System",
+            requirements=requirements
+        )
+        
+        # Then
+        assert prd.id == "prd-123"
+        assert len(prd.requirements) == 2
+        assert prd.is_valid()
+    
+    def test_should_reject_prd_without_requirements(self):
+        """RED: Test para invariante de dominio."""
+        # Given & When & Then
+        with pytest.raises(DomainException) as exc_info:
+            PRD(
+                id="prd-123",
+                titulo="Empty PRD",
+                requirements=[]  # ❌ Violación de invariante
+            )
+        
+        assert "PRD must have at least one requirement" in str(exc_info.value)
+    
+    def test_should_generate_all_tasks_from_requirements(self):
+        """RED: Test para lógica de dominio."""
+        # Given
+        requirements = [
+            Requisito(id="req-1", descripcion="Frontend component", tipo=RequirementType.FUNCTIONAL),
+            Requisito(id="req-2", descripcion="API endpoint", tipo=RequirementType.FUNCTIONAL)
+        ]
+        
+        prd = PRD(id="prd-123", titulo="Test PRD", requirements=requirements)
+        mock_assignee_resolver = Mock()
+        mock_assignee_resolver.resolve_assignee_for_requirement.side_effect = ["Frontend Developer", "Backend Developer"]
+        
+        # When
+        tasks = prd.generar_todas_las_tareas(mock_assignee_resolver)
+        
+        # Then
+        assert len(tasks) == 2
+        assert all(isinstance(task, TareaAsignada) for task in tasks)
+        assert tasks[0].assignee == "Frontend Developer"
+        assert tasks[1].assignee == "Backend Developer"
+
+# GREEN & REFACTOR: Entidad PRD rica en comportamiento
+from dataclasses import dataclass, field
+from typing import List
+from datetime import datetime
+from enum import Enum
+
+class RequirementType(Enum):
+    FUNCTIONAL = "funcional"
+    NON_FUNCTIONAL = "no_funcional"
+
+@dataclass
+class Requisito:
+    """✅ TDD - Value Object para requisitos."""
+    id: str
+    descripcion: str
+    tipo: RequirementType
+    prioridad: str = "P2"
+    
+    def generar_tarea(self, assignee_resolver=None) -> 'TareaAsignada':
+        """Lógica de dominio para generar tarea."""
+        assignee = "Full Stack Developer"  # Default
+        
+        if assignee_resolver:
+            assignee = assignee_resolver.resolve_assignee_for_requirement(self)
+        
+        return TareaAsignada(
+            id_tarea=f"TASK-{self.id}",
+            requisito_id=self.id,
+            descripcion=self.descripcion,
+            assignee=assignee,
+            prioridad=self.prioridad
+        )
+
+@dataclass
+class PRD:
+    """
+    ✅ TDD - Entidad de dominio rica con invariantes y comportamiento.
+    
+    Aggregate Root que encapsula la lógica de negocio de los PRDs.
+    """
+    id: str
+    titulo: str
+    requirements: List[Requisito]
+    fecha_creacion: datetime = field(default_factory=datetime.now)
+    
+    def __post_init__(self):
+        """Validación de invariantes de dominio."""
+        self._validate_domain_invariants()
+    
+    def is_valid(self) -> bool:
+        """Verifica si el PRD cumple con las reglas de dominio."""
+        try:
+            self._validate_domain_invariants()
+            return True
+        except DomainException:
+            return False
+    
+    def add_requirement(self, requirement: Requisito) -> None:
+        """Añade un requisito manteniendo invariantes."""
+        if not requirement:
+            raise ValueError("Requirement cannot be None")
+        
+        self.requirements.append(requirement)
+    
+    def generar_todas_las_tareas(self, assignee_resolver) -> List['TareaAsignada']:
+        """
+        ✅ TDD - Lógica de dominio para generar todas las tareas.
+        
+        Business Logic: Un PRD genera tareas basadas en sus requisitos.
+        """
+        if not self.requirements:
+            raise DomainException("Cannot generate tasks from empty requirements")
+        
+        return [req.generar_tarea(assignee_resolver) for req in self.requirements]
+    
+    def calcular_complejidad(self) -> str:
+        """Lógica de dominio para calcular complejidad del PRD."""
+        num_requirements = len(self.requirements)
+        
+        if num_requirements <= 3:
+            return "BAJA"
+        elif num_requirements <= 8:
+            return "MEDIA"
+        else:
+            return "ALTA"
+    
+    def _validate_domain_invariants(self) -> None:
+        """✅ Domain-Driven Design - Validación de invariantes."""
+        if not self.requirements:
+            raise DomainException("PRD must have at least one requirement")
+        
+        if len(self.titulo) < 5:
+            raise DomainException("PRD title must be at least 5 characters")
+        
+        # Validar que no hay requisitos duplicados
+        requirement_ids = [req.id for req in self.requirements]
+        if len(requirement_ids) != len(set(requirement_ids)):
+            raise DomainException("PRD cannot have duplicate requirements")
+
+@dataclass
+class TareaAsignada:
+    """Value Object para tareas asignadas."""
+    id_tarea: str
+    requisito_id: str
+    descripcion: str
+    assignee: str
+    prioridad: str = "P2"
+    estado: str = "PENDIENTE"
+
+class DomainException(Exception):
+    """Excepción específica de dominio."""
+    pass
+```
+
+### 3.4. Ports & Adapters (Hexagonal Architecture)
+
+```python path=null start=null
+# ✅ PORTS & ADAPTERS - Definición de puertos
+from abc import ABC, abstractmethod
+
+# PUERTOS (Interfaces)
+class TranscriptionService(ABC):
+    @abstractmethod
+    def transcribe(self, audio_url: str, api_key: str) -> str:
+        pass
+
+class SecretManager(ABC):
+    @abstractmethod
+    def get_secret(self, secret_name: str) -> str:
+        pass
+
+class PMSIntegration(ABC):
+    @abstractmethod
+    def create_task(self, task: TareaAsignada) -> str:
+        pass
+
+# ADAPTADORES (Implementaciones)
+class DeepgramTranscriptionAdapter(TranscriptionService):
+    def __init__(self, deepgram_client):
+        self.client = deepgram_client
+    
+    def transcribe(self, audio_url: str, api_key: str) -> str:
+        # ✅ Implementación específica de Deepgram
+        response = self.client.transcription.prerecorded(
+            {'url': audio_url}, 
+            {'punctuate': True, 'model': 'nova'}
+        )
+        return response['results']['channels'][0]['alternatives'][0]['transcript']
+
+class AWSSecretsManagerAdapter(SecretManager):
+    def __init__(self, aws_client):
+        self.client = aws_client
+    
+    def get_secret(self, secret_name: str) -> str:
+        # ✅ Implementación específica de AWS
+        response = self.client.get_secret_value(SecretId=secret_name)
+        return response['SecretString']
+
+class JiraIntegrationAdapter(PMSIntegration):
+    def __init__(self, jira_client):
+        self.client = jira_client
+    
+    def create_task(self, task: TareaAsignada) -> str:
+        # ✅ Implementación específica de Jira
+        issue_data = {
+            'project': {'key': 'PRD'},
+            'summary': task.descripcion,
+            'description': f"Requisito: {task.requisito_id}",
+            'issuetype': {'name': 'Task'},
+            'assignee': {'name': task.assignee},
+            'priority': {'name': task.prioridad}
+        }
+        issue = self.client.create_issue(fields=issue_data)
+        return issue.key
+```
+
+---
+
+## 4. Patrones de Diseño Aplicados
+
+### 4.1. Factory Pattern
+
+**Aplicación para RF4.0 - Asignación Inteligente:**
 ```python path=null start=null
 class RoleAssignmentFactory:
     """Factory para resolver asignación de roles basado en tipo de requisito."""
@@ -785,41 +1176,211 @@ class RoleAssignmentFactory:
     def get_assignee_for_requirement(cls, requisito: Requisito) -> str:
         requirement_type = cls._classify_requirement(requisito.descripcion)
         return cls._role_mappings.get(requirement_type, 'Full Stack Developer')
+    
+    @classmethod
+    def _classify_requirement(cls, descripcion: str) -> str:
+        # ✅ Factory Method - Lógica de clasificación centralizada
+        descripcion_lower = descripcion.lower()
+        
+        if any(keyword in descripcion_lower for keyword in ['ui', 'interface', 'frontend', 'react']):
+            return 'ui_requirement'
+        elif any(keyword in descripcion_lower for keyword in ['api', 'backend', 'server', 'python']):
+            return 'api_requirement'
+        elif any(keyword in descripcion_lower for keyword in ['database', 'postgresql', 'redis']):
+            return 'database_requirement'
+        elif any(keyword in descripcion_lower for keyword in ['cloud', 'aws', 'docker', 'kubernetes']):
+            return 'infrastructure_requirement'
+        elif any(keyword in descripcion_lower for keyword in ['ux', 'user', 'design', 'usability']):
+            return 'user_experience'
+        else:
+            return 'full_stack'
 ```
 
-### 2.2. Strategy Pattern para Diferentes Algoritmos de NLP
+### 4.2. Strategy Pattern
 
+**Aplicación para Diferentes Algoritmos de NLP:**
 ```python path=null start=null
+from abc import ABC, abstractmethod
+
 class RequirementExtractionStrategy(ABC):
     @abstractmethod
     def extract_requirements(self, transcription: str) -> List[Requisito]:
         pass
 
 class SpacyRequirementExtractor(RequirementExtractionStrategy):
+    def __init__(self, nlp_model):
+        self.nlp = nlp_model
+    
     def extract_requirements(self, transcription: str) -> List[Requisito]:
         # ✅ STRATEGY - Implementación específica con spaCy
         doc = self.nlp(transcription)
-        return self._process_entities(doc)
+        requirements = []
+        
+        for sent in doc.sents:
+            if self._is_requirement_sentence(sent):
+                req = self._create_requirement_from_sentence(sent)
+                requirements.append(req)
+        
+        return requirements
 
 class OpenAIRequirementExtractor(RequirementExtractionStrategy):
+    def __init__(self, openai_client):
+        self.client = openai_client
+    
     def extract_requirements(self, transcription: str) -> List[Requisito]:
         # ✅ STRATEGY - Implementación específica con OpenAI
-        prompt = f"Extrae requisitos de: {transcription}"
-        return self._parse_openai_response(self.client.chat.completions.create(...))
+        prompt = f"""
+        Extrae los requisitos funcionales y no funcionales de la siguiente transcripción:
+        {transcription}
+        
+        Formato JSON: [{{"tipo": "funcional|no_funcional", "descripcion": "...", "prioridad": "P0|P1|P2"}}]
+        """
+        
+        response = self.client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        return self._parse_openai_response(response)
+
+# Context que usa las estrategias
+class PRDGenerationService:
+    def __init__(self, extraction_strategy: RequirementExtractionStrategy):
+        self.extraction_strategy = extraction_strategy
+    
+    def generate_prd(self, transcription: str) -> PRD:
+        # ✅ STRATEGY - El contexto delega la extracción a la estrategia
+        requirements = self.extraction_strategy.extract_requirements(transcription)
+        
+        return PRD(
+            id=self._generate_prd_id(),
+            titulo=self._extract_title_from_transcription(transcription),
+            fecha_creacion=datetime.now(),
+            requirements=requirements
+        )
 ```
 
-### 2.3. Circuit Breaker Pattern para RNF5.0 - Tolerancia a Fallos
+### 4.3. Observer Pattern
 
+**Aplicación para Notificaciones (RF - Notificar al PM):**
 ```python path=null start=null
+from abc import ABC, abstractmethod
+from typing import List
+
+class MeetingProcessingObserver(ABC):
+    @abstractmethod
+    def on_processing_started(self, meeting_id: str):
+        pass
+    
+    @abstractmethod
+    def on_processing_completed(self, meeting_id: str, prd: PRD, tasks: List[TareaAsignada]):
+        pass
+    
+    @abstractmethod 
+    def on_processing_failed(self, meeting_id: str, error: Exception):
+        pass
+
+class EmailNotificationObserver(MeetingProcessingObserver):
+    def __init__(self, email_service: EmailService):
+        self.email_service = email_service
+    
+    def on_processing_started(self, meeting_id: str):
+        # ✅ OBSERVER - Notificación específica por email
+        self.email_service.send_email(
+            subject=f"Procesamiento iniciado - Reunión {meeting_id}",
+            body="El procesamiento de la reunión ha comenzado...",
+            recipients=self._get_pm_emails()
+        )
+    
+    def on_processing_completed(self, meeting_id: str, prd: PRD, tasks: List[TareaAsignada]):
+        # ✅ OBSERVER - Notificación de finalización exitosa
+        task_summary = self._create_task_summary(tasks)
+        self.email_service.send_email(
+            subject=f"PRD y tareas listos - Reunión {meeting_id}",
+            body=f"PRD generado: {prd.titulo}\nTareas creadas: {task_summary}",
+            recipients=self._get_pm_emails(),
+            attachments=[prd.generar_pdf()]
+        )
+
+class SlackNotificationObserver(MeetingProcessingObserver):
+    def __init__(self, slack_client):
+        self.slack_client = slack_client
+    
+    def on_processing_completed(self, meeting_id: str, prd: PRD, tasks: List[TareaAsignada]):
+        # ✅ OBSERVER - Notificación específica por Slack
+        message = f"""
+        ✅ Reunión {meeting_id} procesada exitosamente
+        📄 PRD: {prd.titulo}
+        📋 Tareas creadas: {len(tasks)}
+        """
+        self.slack_client.send_message(channel="#pm-notifications", message=message)
+
+# Subject (Observable)
+class MeetingProcessor:
+    def __init__(self):
+        self._observers: List[MeetingProcessingObserver] = []
+    
+    def add_observer(self, observer: MeetingProcessingObserver):
+        self._observers.append(observer)
+    
+    def remove_observer(self, observer: MeetingProcessingObserver):
+        self._observers.remove(observer)
+    
+    def _notify_processing_started(self, meeting_id: str):
+        for observer in self._observers:
+            observer.on_processing_started(meeting_id)
+    
+    def _notify_processing_completed(self, meeting_id: str, prd: PRD, tasks: List[TareaAsignada]):
+        for observer in self._observers:
+            observer.on_processing_completed(meeting_id, prd, tasks)
+    
+    def process_meeting(self, meeting_id: str) -> ProcessingResult:
+        self._notify_processing_started(meeting_id)
+        
+        try:
+            # Lógica de procesamiento...
+            prd = self._generate_prd()
+            tasks = self._create_tasks()
+            
+            self._notify_processing_completed(meeting_id, prd, tasks)
+            return ProcessingResult(success=True, prd=prd, tasks=tasks)
+            
+        except Exception as e:
+            self._notify_processing_failed(meeting_id, e)
+            raise
+```
+
+### 4.4. Circuit Breaker Pattern
+
+**Aplicación para RNF5.0 - Tolerancia a Fallos:**
+```python path=null start=null
+import time
+from enum import Enum
+from typing import Callable, Any
+
+class CircuitState(Enum):
+    CLOSED = "closed"      # Funcionando normalmente
+    OPEN = "open"          # Circuito abierto, fallos detectados  
+    HALF_OPEN = "half_open" # Probando si el servicio se recuperó
+
 class CircuitBreaker:
-    def __init__(self, failure_threshold: int = 3, timeout: int = 60):
+    def __init__(
+        self, 
+        failure_threshold: int = 5,
+        timeout: int = 60,
+        expected_exception: type = Exception
+    ):
         self.failure_threshold = failure_threshold
         self.timeout = timeout
+        self.expected_exception = expected_exception
+        
         self.failure_count = 0
+        self.last_failure_time = None
         self.state = CircuitState.CLOSED
     
     def call(self, func: Callable, *args, **kwargs) -> Any:
         """✅ CIRCUIT BREAKER - Protege llamadas a servicios externos."""
+        
         if self.state == CircuitState.OPEN:
             if self._should_attempt_reset():
                 self.state = CircuitState.HALF_OPEN
@@ -830,22 +1391,260 @@ class CircuitBreaker:
             result = func(*args, **kwargs)
             self._on_success()
             return result
-        except Exception as e:
+            
+        except self.expected_exception as e:
             self._on_failure()
             raise e
+    
+    def _should_attempt_reset(self) -> bool:
+        return (time.time() - self.last_failure_time) >= self.timeout
+    
+    def _on_success(self):
+        self.failure_count = 0
+        self.state = CircuitState.CLOSED
+    
+    def _on_failure(self):
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        
+        if self.failure_count >= self.failure_threshold:
+            self.state = CircuitState.OPEN
+
+# Aplicación en servicios externos
+class RobustTranscriptionService:
+    def __init__(self, transcription_service: TranscriptionService):
+        self.service = transcription_service
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=3,  # RNF5.0: Máximo 3 reintentos
+            timeout=60,           # RNF5.0: Esperar 1 minuto
+            expected_exception=TranscriptionServiceException
+        )
+    
+    def transcribe_with_protection(self, audio_url: str, api_key: str) -> str:
+        """✅ Transcripción protegida por Circuit Breaker."""
+        return self.circuit_breaker.call(
+            self.service.transcribe, 
+            audio_url, 
+            api_key
+        )
 ```
 
-## 3. Bases de Datos: Principios ACID
+---
 
-### 3.1. Implementación de Transacciones ACID
+## 5. Bases de Datos: Principios ACID (Validados con TDD)
+
+### 5.1. TDD para Transacciones ACID
+
+```python path=null start=null
+# ✅ TDD para principios ACID
+class TestDatabaseTransactionManager:
+    """TDD para gestión de transacciones ACID."""
+    
+    @pytest.fixture
+    def db_manager(self):
+        """Setup de manager con BD en memoria."""
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        return DatabaseTransactionManager(engine)
+    
+    def test_should_commit_transaction_when_successful(self, db_manager):
+        """RED: Test para propiedad ATOMICITY y DURABILITY."""
+        # Given
+        meeting = Meeting(id="meeting-123", audio_url="http://example.com/audio.mp3")
+        prd = PRD(id="prd-456", titulo="Test PRD", requirements=[])
+        
+        # When
+        with db_manager.transaction() as session:
+            session.add(meeting)
+            session.add(prd)
+            # Transacción exitosa, debe hacer commit automáticamente
+        
+        # Then - Verificar DURABILITY
+        with db_manager.transaction() as session:
+            saved_meeting = session.get(Meeting, "meeting-123")
+            saved_prd = session.get(PRD, "prd-456")
+            
+            assert saved_meeting is not None
+            assert saved_prd is not None
+    
+    def test_should_rollback_transaction_when_error_occurs(self, db_manager):
+        """RED: Test para propiedad ATOMICITY en caso de error."""
+        # Given
+        meeting = Meeting(id="meeting-123", audio_url="http://example.com/audio.mp3")
+        
+        # When - Simular error en transacción
+        with pytest.raises(ValueError):
+            with db_manager.transaction() as session:
+                session.add(meeting)
+                session.flush()  # Asegurar que se agregó temporalmente
+                raise ValueError("Simulated error")  # Error que debe causar rollback
+        
+        # Then - Verificar ATOMICITY (rollback)
+        with db_manager.transaction() as session:
+            saved_meeting = session.get(Meeting, "meeting-123")
+            assert saved_meeting is None  # No debe existir debido al rollback
+    
+    def test_should_maintain_consistency_with_validation(self, db_manager):
+        """RED: Test para propiedad CONSISTENCY."""
+        # Given
+        invalid_meeting = Meeting(id="", audio_url="")  # Datos inválidos
+        
+        # When & Then - La validación debe mantener consistencia
+        with pytest.raises(ValueError) as exc_info:
+            with db_manager.transaction() as session:
+                # La validación debe ocurrir antes del commit
+                self._validate_meeting_data(invalid_meeting)
+                session.add(invalid_meeting)
+        
+        assert "Meeting must have valid ID" in str(exc_info.value)
+    
+    def test_should_handle_concurrent_access_with_isolation(self, db_manager):
+        """RED: Test para propiedad ISOLATION."""
+        # Given
+        meeting_id = "concurrent-meeting"
+        
+        # When - Simular acceso concurrente
+        def transaction_1():
+            with db_manager.transaction() as session:
+                meeting = Meeting(id=meeting_id, audio_url="http://example.com/audio1.mp3")
+                session.add(meeting)
+                time.sleep(0.1)  # Simular procesamiento
+                # Esta transacción debe completarse sin interferencias
+        
+        def transaction_2():
+            time.sleep(0.05)  # Empezar ligeramente después
+            with db_manager.transaction() as session:
+                # Debe poder leer datos consistentes
+                meeting = session.get(Meeting, meeting_id)
+                return meeting
+        
+        # Ejecutar concurrentemente (en pruebas reales usaríamos threading)
+        transaction_1()
+        result = transaction_2()
+        
+        # Then - ISOLATION mantenida
+        assert result is not None
+        assert result.id == meeting_id
+
+# GREEN: Implementación del Transaction Manager
+from contextlib import contextmanager
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
+from typing import Generator
+
+class DatabaseTransactionManager:
+    """✅ TDD - Gestor de transacciones que garantiza propiedades ACID."""
+    
+    def __init__(self, engine=None, database_url: str = None):
+        if engine:
+            self.engine = engine
+        elif database_url:
+            self.engine = create_engine(database_url)
+        else:
+            raise ValueError("Either engine or database_url must be provided")
+            
+        self.SessionLocal = sessionmaker(bind=self.engine)
+    
+    @contextmanager
+    def transaction(self) -> Generator[Session, None, None]:
+        """
+        ✅ ACID Context Manager que garantiza:
+        - ATOMICITY: Todo o nada mediante commit/rollback
+        - CONSISTENCY: Validaciones antes del commit
+        - ISOLATION: Sesiones aisladas por transacción
+        - DURABILITY: Cambios persistentes tras commit exitoso
+        """
+        session = self.SessionLocal()
+        try:
+            yield session
+            session.commit()  # ✅ ATOMICITY & DURABILITY
+        except Exception as e:
+            session.rollback()  # ✅ ATOMICITY - Todo o nada
+            raise e
+        finally:
+            session.close()  # ✅ ISOLATION - Limpieza de sesión
+    
+    def _validate_meeting_data(self, meeting: Meeting) -> None:
+        """✅ CONSISTENCY - Validación de reglas de negocio."""
+        if not meeting.id:
+            raise ValueError("Meeting must have valid ID")
+        if not meeting.audio_url:
+            raise ValueError("Meeting must have audio URL")
+
+# REFACTOR: Repository con manejo ACID
+class MeetingRepository:
+    """✅ TDD REFACTOR - Repository que usa principios ACID."""
+    
+    def __init__(self, db_manager: DatabaseTransactionManager):
+        self.db_manager = db_manager
+    
+    def save_meeting_with_prd_and_tasks(
+        self, 
+        meeting: Meeting, 
+        prd: PRD, 
+        tasks: List[TareaAsignada]
+    ) -> None:
+        """✅ ACID - Operación atómica completa."""
+        
+        with self.db_manager.transaction() as session:
+            # ✅ CONSISTENCY - Validaciones de integridad
+            self._validate_meeting_data(meeting)
+            self._validate_prd_data(prd)
+            self._validate_tasks_data(tasks)
+            
+            # ✅ ATOMICITY - Todo en una transacción
+            session.add(meeting)
+            session.add(prd)
+            session.add_all(tasks)
+            
+            # Establecer relaciones
+            prd.reunion_id = meeting.id
+            for task in tasks:
+                task.prd_id = prd.id
+            
+            # ✅ ISOLATION - La transacción se ejecuta aisladamente
+            # ✅ DURABILITY - Los cambios persisten al hacer commit
+    
+    def _validate_meeting_data(self, meeting: Meeting) -> None:
+        """CONSISTENCY - Validaciones de reglas de negocio."""
+        if not meeting.url_audio:
+            raise ValueError("Meeting must have audio URL")
+        if not meeting.id_reunion:
+            raise ValueError("Meeting must have valid ID")
+    
+    def _validate_prd_data(self, prd: PRD) -> None:
+        """CONSISTENCY - Validaciones de PRD."""
+        if not prd.requirements:
+            raise ValueError("PRD must have at least one requirement")
+        if len(prd.titulo) < 5:
+            raise ValueError("PRD title must be at least 5 characters")
+    
+    def _validate_tasks_data(self, tasks: List[TareaAsignada]) -> None:
+        """CONSISTENCY - Validaciones de tareas."""
+        valid_roles = [
+            'Frontend Developer', 'Backend Developer', 'Full Stack Developer', 
+            'Cloud Engineer', 'UX Designer'
+        ]
+        
+        for task in tasks:
+            if task.assignee not in valid_roles:
+                raise ValueError(f"Invalid role assignment: {task.assignee}")
+```
+
+### 5.2. Implementación de Transacciones ACID
 
 ```python path=null start=null
 from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
+from typing import Generator
 
 class DatabaseTransactionManager:
     """✅ ACID - Gestor de transacciones que garantiza propiedades ACID."""
+    
+    def __init__(self, database_url: str):
+        self.engine = create_engine(database_url)
+        self.SessionLocal = sessionmaker(bind=self.engine)
     
     @contextmanager
     def transaction(self) -> Generator[Session, None, None]:
@@ -867,8 +1666,14 @@ class DatabaseTransactionManager:
             session.close()
 
 class MeetingRepository:
+    def __init__(self, db_manager: DatabaseTransactionManager):
+        self.db_manager = db_manager
+    
     def save_meeting_with_prd_and_tasks(
-        self, meeting: Reunion, prd: PRD, tasks: List[TareaAsignada]
+        self, 
+        meeting: Reunion, 
+        prd: PRD, 
+        tasks: List[TareaAsignada]
     ) -> None:
         """✅ ACID - Operación atómica completa."""
         
@@ -876,23 +1681,282 @@ class MeetingRepository:
             # ✅ CONSISTENCY - Validaciones de integridad
             self._validate_meeting_data(meeting)
             self._validate_prd_data(prd)
+            self._validate_tasks_data(tasks)
             
             # ✅ ATOMICITY - Todo en una transacción
             session.add(meeting)
             session.add(prd)
             session.add_all(tasks)
             
+            # ✅ CONSISTENCY - Relaciones consistentes
+            prd.reunion_id = meeting.id
+            for task in tasks:
+                task.prd_id = prd.id
+            
             # ✅ ISOLATION - La transacción se ejecuta de forma aislada
             # ✅ DURABILITY - Los cambios persisten al hacer commit
+    
+    def _validate_meeting_data(self, meeting: Reunion) -> None:
+        """✅ CONSISTENCY - Validaciones de reglas de negocio."""
+        if not meeting.url_audio:
+            raise ValueError("Meeting must have audio URL")
+        if not meeting.id_reunion:
+            raise ValueError("Meeting must have valid ID")
+    
+    def _validate_prd_data(self, prd: PRD) -> None:
+        """✅ CONSISTENCY - Validaciones de PRD."""
+        if not prd.requirements:
+            raise ValueError("PRD must have at least one requirement")
+        if len(prd.titulo) < 5:
+            raise ValueError("PRD title must be at least 5 characters")
+    
+    def _validate_tasks_data(self, tasks: List[TareaAsignada]) -> None:
+        """✅ CONSISTENCY - Validaciones de tareas."""
+        valid_roles = ['Frontend Developer', 'Backend Developer', 'Full Stack Developer', 'Cloud Engineer', 'UX Designer']
+        
+        for task in tasks:
+            if task.pm_asignado not in valid_roles:
+                raise ValueError(f"Invalid role assignment: {task.pm_asignado}")
 ```
 
-## 4. Gestión de Calidad de Código
+### 5.3. Gestión de Concurrent Access
 
-### 4.1. Testing Strategy
+```python path=null start=null
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
+import redis
+
+class ConcurrentMeetingProcessor:
+    """✅ ACID - Gestión de concurrencia para procesamiento de reuniones."""
+    
+    def __init__(self, db_manager: DatabaseTransactionManager, redis_client: redis.Redis):
+        self.db_manager = db_manager
+        self.redis = redis_client
+    
+    def process_meeting_safely(self, meeting_id: str) -> ProcessingResult:
+        """✅ ISOLATION - Procesa reunión evitando condiciones de carrera."""
+        
+        lock_key = f"meeting_processing:{meeting_id}"
+        
+        # ✅ ISOLATION - Lock distribuido para evitar procesamiento concurrente
+        with self.redis.lock(lock_key, timeout=300):  # 5 minutos timeout
+            
+            with self.db_manager.transaction() as session:
+                # ✅ ISOLATION - Select con FOR UPDATE evita lecturas sucias
+                meeting = session.execute(
+                    select(Meeting)
+                    .where(Meeting.id == meeting_id)
+                    .with_for_update()  # Bloqueo pesimista
+                ).scalar_one_or_none()
+                
+                if not meeting:
+                    raise MeetingNotFoundException(f"Meeting {meeting_id} not found")
+                
+                if meeting.status == 'PROCESSING':
+                    raise MeetingAlreadyProcessingException(
+                        f"Meeting {meeting_id} is already being processed"
+                    )
+                
+                # ✅ CONSISTENCY - Actualización atómica de estado
+                meeting.status = 'PROCESSING'
+                meeting.processing_started_at = datetime.utcnow()
+                
+                try:
+                    # Procesamiento de la reunión
+                    result = self._do_processing(meeting)
+                    
+                    # ✅ ATOMICITY - Todo o nada
+                    meeting.status = 'COMPLETED'
+                    meeting.processing_completed_at = datetime.utcnow()
+                    
+                    return result
+                    
+                except Exception as e:
+                    # ✅ CONSISTENCY - Estado consistente en caso de error
+                    meeting.status = 'FAILED'
+                    meeting.error_message = str(e)
+                    raise e
+```
+
+---
+
+## 6. Gestión de Calidad de Código
+
+### 6.1. Clean Code Principles
+
+```python path=null start=null
+# ✅ CLEAN CODE - Nombres descriptivos y funciones pequeñas
+class MeetingAudioProcessor:
+    """Procesador de audio de reuniones con principios de Clean Code."""
+    
+    def process_meeting_audio(self, meeting_url: str) -> ProcessingResult:
+        """
+        ✅ CLEAN CODE - Función con una sola responsabilidad y nombre descriptivo.
+        
+        Args:
+            meeting_url: URL de la reunión a procesar
+            
+        Returns:
+            ProcessingResult: Resultado del procesamiento con PRD y tareas
+            
+        Raises:
+            InvalidMeetingUrlException: Si la URL no es válida
+            TranscriptionFailedException: Si falla la transcripción
+        """
+        self._validate_meeting_url(meeting_url)
+        
+        audio_file = self._extract_audio_from_meeting(meeting_url)
+        transcription = self._transcribe_audio_safely(audio_file)
+        requirements = self._extract_requirements_from_transcription(transcription)
+        prd = self._generate_prd_from_requirements(requirements)
+        tasks = self._create_tasks_from_prd(prd)
+        
+        return ProcessingResult(prd=prd, tasks=tasks)
+    
+    def _validate_meeting_url(self, url: str) -> None:
+        """✅ CLEAN CODE - Función pequeña con propósito específico."""
+        if not url or not self._is_valid_meeting_url(url):
+            raise InvalidMeetingUrlException(f"Invalid meeting URL: {url}")
+    
+    def _is_valid_meeting_url(self, url: str) -> bool:
+        """✅ CLEAN CODE - Función booleana con nombre claro."""
+        valid_patterns = [
+            r'https://meet\.google\.com/',
+            r'https://teams\.microsoft\.com/',
+            r'https://zoom\.us/'
+        ]
+        return any(re.match(pattern, url) for pattern in valid_patterns)
+    
+    def _extract_audio_from_meeting(self, meeting_url: str) -> AudioFile:
+        """✅ CLEAN CODE - Abstracción clara del proceso."""
+        # Implementación específica extraída a método privado
+        pass
+    
+    def _transcribe_audio_safely(self, audio_file: AudioFile) -> Transcription:
+        """✅ CLEAN CODE - Manejo de errores explícito en el nombre."""
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                return self.transcription_service.transcribe(audio_file)
+            except TranscriptionServiceException as e:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    raise TranscriptionFailedException(
+                        f"Failed to transcribe after {max_retries} attempts"
+                    ) from e
+                self._wait_before_retry(retry_count)
+    
+    def _wait_before_retry(self, retry_count: int) -> None:
+        """✅ CLEAN CODE - Responsabilidad específica extraída."""
+        wait_time = min(60, 2 ** retry_count)  # Exponential backoff, max 60s
+        time.sleep(wait_time)
+```
+
+### 6.2. Logging y Observabilidad
+
+```python path=null start=null
+import logging
+import structlog
+from contextlib import contextmanager
+import time
+from typing import Dict, Any
+
+# ✅ CLEAN CODE - Configuración centralizada de logging
+def configure_structured_logging():
+    """Configura logging estructurado para mejor observabilidad."""
+    structlog.configure(
+        processors=[
+            structlog.stdlib.filter_by_level,
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.PositionalArgumentsFormatter(),
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.UnicodeDecoder(),
+            structlog.processors.JSONRenderer()
+        ],
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+
+class ObservableMeetingProcessor:
+    """✅ CLEAN CODE - Procesador con observabilidad integrada."""
+    
+    def __init__(self):
+        self.logger = structlog.get_logger(__name__)
+    
+    def process_meeting(self, meeting_id: str) -> ProcessingResult:
+        """✅ OBSERVABILITY - Procesamiento con logs estructurados."""
+        
+        with self._log_processing_context(meeting_id) as ctx:
+            try:
+                self.logger.info(
+                    "meeting_processing_started",
+                    meeting_id=meeting_id,
+                    component="meeting_processor"
+                )
+                
+                # Procesamiento con métricas
+                with self._measure_processing_time() as timer:
+                    result = self._do_processing(meeting_id)
+                
+                self.logger.info(
+                    "meeting_processing_completed",
+                    meeting_id=meeting_id,
+                    processing_time_seconds=timer.elapsed,
+                    prd_id=result.prd.id,
+                    tasks_created=len(result.tasks),
+                    component="meeting_processor"
+                )
+                
+                return result
+                
+            except Exception as e:
+                self.logger.error(
+                    "meeting_processing_failed",
+                    meeting_id=meeting_id,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    component="meeting_processor",
+                    exc_info=True
+                )
+                raise
+    
+    @contextmanager
+    def _log_processing_context(self, meeting_id: str):
+        """✅ OBSERVABILITY - Context manager para logging contextual."""
+        self.logger = self.logger.bind(meeting_id=meeting_id)
+        try:
+            yield self.logger
+        finally:
+            self.logger = self.logger.unbind("meeting_id")
+    
+    @contextmanager
+    def _measure_processing_time(self):
+        """✅ OBSERVABILITY - Medición de tiempo de procesamiento."""
+        class Timer:
+            def __init__(self):
+                self.start_time = time.time()
+                self.elapsed = 0
+        
+        timer = Timer()
+        try:
+            yield timer
+        finally:
+            timer.elapsed = time.time() - timer.start_time
+```
+
+### 6.3. Testing Strategy
 
 ```python path=null start=null
 import pytest
 from unittest.mock import Mock, patch
+from typing import Generator
 
 # ✅ CLEAN CODE - Tests bien estructurados y descriptivos
 class TestMeetingProcessor:
@@ -904,6 +1968,14 @@ class TestMeetingProcessor:
         mock = Mock(spec=TranscriptionService)
         mock.transcribe.return_value = "Mock transcription content"
         return mock
+    
+    @pytest.fixture
+    def meeting_processor(self, mock_transcription_service: Mock) -> MeetingProcessor:
+        """✅ TESTING - Fixture para procesador con dependencias mockeadas."""
+        return MeetingProcessor(
+            transcription_service=mock_transcription_service,
+            prd_generator=Mock()
+        )
     
     def test_process_meeting_success_path(self, meeting_processor: MeetingProcessor):
         """✅ TESTING - Test del camino exitoso."""
@@ -933,7 +2005,7 @@ class TestMeetingProcessor:
         assert mock_transcription_service.transcribe.call_count == 3
 ```
 
-### 4.2. Configuration Management
+### 6.4. Configuration Management
 
 ```python path=null start=null
 @dataclass
@@ -969,600 +2041,122 @@ class ApplicationConfig:
         )
 ```
 
-## 5. Resumen de Principios Aplicados
-
-### 5.1. Checklist de Implementación
-
-| Principio/Patrón | ✅ Implementado | Aplicación en M2PRD-001 |
-|------------------|----------------|---------------------------|
-| **SRP (Single Responsibility)** | ✅ | Cada servicio tiene una responsabilidad única |
-| **OCP (Open/Closed)** | ✅ | Extensible vía PMSIntegrationFactory sin modificar código |
-| **LSP (Liskov Substitution)** | ✅ | Jerarquía de Requisito permite sustitución |
-| **ISP (Interface Segregation)** | ✅ | Interfaces específicas por responsabilidad |
-| **DIP (Dependency Inversion)** | ✅ | Dependencias por abstracción con inversión de control |
-| **Factory Pattern** | ✅ | RoleAssignmentFactory para RF4.0 - Asignación Inteligente |
-| **Strategy Pattern** | ✅ | Múltiples algoritmos de NLP intercambiables |
-| **Circuit Breaker** | ✅ | Protección para RNF5.0 - Tolerancia a Fallos |
-| **ACID Principles** | ✅ | Transacciones atómicas con PostgreSQL |
-| **Clean Architecture** | ✅ | Capas bien definidas con dependencias hacia adentro |
-
-### 5.2. Mapeo a Requisitos del Proyecto
-
-| Requisito | Principio/Patrón Aplicado | Implementación |
-|-----------|---------------------------|----------------|
-| **RF4.0 - Asignación Inteligente** | Factory Pattern | RoleAssignmentFactory con clasificadores |
-| **RF5.0 - Integración PMS** | Open/Closed + Factory | PMSIntegrationFactory extensible (Jira, Trello, Linear) |
-| **RNF1.0 - Rendimiento < 5min** | Circuit Breaker + Monitoring | Health checks y alertas de rendimiento |
-| **RNF2.0 - Seguridad** | Configuration Management | Gestores de secretos externos |
-| **RNF5.0 - Tolerancia a Fallos** | Circuit Breaker + Retry Pattern | Reintentos exponenciales |
-
 ---
 
-# M2PRD-001: Meet-Teams-to-PRD
+## 7. Resumen de Implementación TDD + Arquitectura
 
-## 1. Descripción del Proyecto
+### 7.1. Checklist de Principios Aplicados con TDD
 
-El proyecto **Meet-Teams-to-PRD** (M2PRD-001) implementa un sistema de orquestación distribuida cuyo objetivo principal es transformar una grabación de audio de una reunión (Meet/Teams) en un borrador estructurado de **Product Requirements Document (PRD)** y tareas asignadas automáticamente en un sistema de gestión de proyectos (PMS).
+| Principio/Patrón | ✅ Con TDD | Beneficio del TDD |
+|------------------|------------|-------------------|
+| **SRP (Single Responsibility)** | ✅ | Tests específicos fuerzan responsabilidades claras |
+| **OCP (Open/Closed)** | ✅ | Mocks facilitan extensión sin modificar código existente |
+| **LSP (Liskov Substitution)** | ✅ | Tests con abstracciones validan comportamiento consistente |
+| **ISP (Interface Segregation)** | ✅ | Mocks específicos evitan dependencias innecesarias |
+| **DIP (Dependency Inversion)** | ✅ | TDD promueve naturalmente inyección de dependencias |
+| **Factory Pattern** | ✅ | Tests definen comportamiento antes de implementar factory |
+| **Strategy Pattern** | ✅ | TDD facilita intercambio de algoritmos via mocks |
+| **Circuit Breaker** | ✅ | Tests validan estados y transiciones del circuito |
+| **ACID Principles** | ✅ | Tests verifican propiedades transaccionales |
+| **Clean Code** | ✅ | TDD fuerza nombres descriptivos y funciones pequeñas |
 
-La arquitectura se centra en la **Plataforma de Automatización (Workflow)** como el orquestador central que gestiona la lógica de negocio, las llamadas a servicios externos (Deepgram, Módulo IA/NLP, APIs de PMS) y el manejo de errores/reintentos (RNF5.0).
-
-### **Componentes Clave:**
-
-| Componente | Rol en el Sistema |
-| :--- | :--- |
-| **Extensión de Chrome** | Disparador inicial. Captura la URL de la reunión y envía la solicitud. |
-| **Webhook** | Punto de entrada del sistema. Recibe la solicitud y activa el Flujo de Trabajo. |
-| **Workflow (Orquestador)** | Gestiona la secuencia de procesamiento, desde la transcripción hasta la asignación de tareas. |
-| **Deepgram** | Servicio externo de Transcripción. Transforma el Archivo de Audio en texto. |
-| **Módulo IA/NLP** | Motor de Procesamiento de Requisitos. Analiza la Transcripción para generar Requisitos y el borrador de PRD. |
-| **APIs de PMS** | Servicio para interactuar con el sistema de gestión de proyectos (Jira/Asana) para crear y asignar la Tarea Asignada. |
-
-### **Objetos de Datos Centrales:**
-
-* `Reunion`
-* `ArchivoDeAudio`
-* `Transcripcion`
-* `Requisito` (Funcional o NoFuncional)
-* `PRD` (Documento de Requisitos de Producto)
-* `TareaAsignada`
-
-## 2. Diagramas UML (Mermaid)
-
-### 2.1. Diagrama de Casos de Uso
+### 7.2. Flujo de Desarrollo TDD Recomendado
 
 ```mermaid
-%% UML: Diagrama de Casos de Uso (Use Case Diagram)
 graph TD
-    subgraph system_boundary [Límite del Sistema: M2PRD-001 Workflow]
-        UC1(Capturar ID de Reunión)
-        UC2(Invocar Servicio de Transcripción)
-        UC3(Generar Requisitos e Ítemes de PRD)
-        UC4(Asignar Requisitos como Tareas)
-        UC5(Notificar al PM)
-        
-        UC2 -- <<include>> --> UC1: Inicia el Flujo
-        UC3 -- <<include>> --> UC2: Procesa la Transcripción
-        UC4 -- <<include>> --> UC3: Usa los Requisitos Generados
-    end
+    A[🔴 RED: Escribir test que falle] --> B[🟢 GREEN: Código mínimo que pase]
+    B --> C[🔵 REFACTOR: Aplicar principios SOLID]
+    C --> D{¿Más funcionalidad?}
+    D -->|Sí| A
+    D -->|No| E[✅ Feature completa]
     
-    actor_pm[Jefe de Producto (PM)] 
-    actor_automation((Plataforma de Automatización))
-
-    actor_pm --> UC1: Inicia Proceso
-    actor_automation --> UC2: Orquesta Llamada
-    actor_automation --> UC3: Orquesta Llamada
-    actor_automation --> UC4: Orquesta Llamada
-    
-    %% Relación de Generalización (Hereda la capacidad de iniciar y recibir notificaciones)
-    actor_pm --|> actor_automation: Administrador de Flujo
-    
-    UC5 --> actor_pm: Tarea y PRD Listos
+    C --> F[Aplicar Clean Architecture]
+    C --> G[Aplicar Design Patterns]
+    C --> H[Validar ACID/Clean Code]
 ```
 
-### 2.2. Diagrama de Clases
+### 7.3. Scripts de Desarrollo TDD
 
-```mermaid
-%% UML: Diagrama de Clases (Class Diagram)
-classDiagram
-    direction LR
-    
-    class Reunion {
-        - id_reunion: string
-        - url_audio: string
-        - + iniciarProcesamiento(url): bool
-    }
-    
-    class ArchivoDeAudio {
-        - sizeMB: float
-        - + cargarDesdeURL(url): ArchivoDeAudio
-    }
-    
-    class Transcripcion {
-        - texto_crudo: string
-        - - segundos: int
-        - + analizarTexto(): Requisito[]
-    }
+```bash path=null start=null
+#!/bin/bash
+# ✅ TDD - Scripts para flujo de desarrollo
 
-    class Requisito {
-        - + id_requisito: string
-        - + tipo: (Funcional | NoFuncional)
-        - - descripcion: string
-        - - prioridad: (P0 | P1 | P2)
-        - + generarTarea(): TareaAsignada
-    }
+# Ejecutar tests en modo watch (TDD continuo)
+tdd_watch() {
+    echo "🔄 Iniciando TDD Watch Mode..."
+    pytest --watch tests/ --verbose --tb=short
+}
+
+# Ejecutar ciclo TDD completo
+tdd_cycle() {
+    echo "🔴 RED: Ejecutando tests (deben fallar)..."
+    pytest tests/ --tb=short
     
-    class PRD {
-        - titulo: string
-        - - fecha_creacion: date
-        - + generarPDF(): void
-    }
+    echo "🟢 GREEN: Implementar código mínimo"
+    echo "🔵 REFACTOR: Aplicar principios de arquitectura"
     
-    class TareaAsignada {
-        - + id_tarea: string
-        - - pm_asignado: string
-        - - estado: string
-    }
+    echo "✅ Ejecutando tests finales..."
+    pytest tests/ --verbose --cov=src/
+}
+
+# Validar cobertura de tests
+validate_coverage() {
+    echo "📊 Validando cobertura de tests..."
+    pytest --cov=src/ --cov-report=html --cov-fail-under=80
+    echo "Reporte HTML generado en htmlcov/"
+}
+
+# Ejecutar análisis de calidad
+quality_check() {
+    echo "🔍 Análisis de calidad de código..."
     
-    %% Relaciones:
+    # Formateo con Black
+    black --check --diff src/ tests/
     
-    %% Composición (Rombo relleno) - Fuerte dependencia existencial
-    Reunion "1" *-- "1" ArchivoDeAudio: contiene
-    ArchivoDeAudio "1" *-- "1" Transcripcion: esGeneradaDe
-    PRD "1" *-- "*" Requisito: contiene
-    Requisito "1" *-- "1" TareaAsignada: asigna
+    # Imports con isort
+    isort --check-only --diff src/ tests/
     
-    %% Asociación (Línea continua) - Dependencia lógica/funcional
-    Transcripcion "1" -- "1" PRD: esFuentePara
+    # Linting con flake8
+    flake8 src/ tests/ --max-line-length=88 --extend-ignore=E203
+    
+    # Type checking con mypy
+    mypy src/ --strict
+    
+    echo "✅ Análisis de calidad completado"
+}
 ```
-
-### 2.3. Diagrama de Secuencia
-
-```mermaid
-%% UML: Diagrama de Secuencia (Sequence Diagram)
-sequenceDiagram
-    actor PM
-    participant Extension
-    participant Webhook
-    participant Workflow
-    participant Deepgram
-    participant Modulo_IA as Modulo IA/NLP
-    participant APIs_PMS
-    
-    title Escenario 1: Flujo Básico con Orquestación y Manejo de Errores (RNF5.0)
-
-    PM->>Extension: 1. Click en 'Iniciar Captura' (RF1.0)
-    activate Extension
-    Extension->>Webhook: 2. POST /trigger (url_audio)
-    deactivate Extension
-    
-    activate Webhook
-    Webhook->>Workflow: 3. Iniciar Flujo
-    deactivate Webhook
-    
-    activate Workflow
-    Workflow->>Deepgram: 4. Llama a Transcribir (ArchivoDeAudio)
-    
-    loop Reintentos (RNF5.0: Max 3 veces)
-        alt Transcripción Exitosa (RF2.0)
-            Deepgram-->>Workflow: 5. Transcripción OK (Transcripcion)
-            
-            Workflow->>Modulo_IA: 6. Procesar(Transcripcion)
-            
-            alt Generación Exitosa (RF3.0)
-                Modulo_IA-->>Workflow: 7. Requisitos OK (PRD, Requisito[])
-                
-                Workflow->>APIs_PMS: 8. Crear Tareas(Requisito[]) (RF4.0)
-                APIs_PMS-->>Workflow: 9. Tareas Creadas (TareaAsignada[])
-                
-                Workflow->>PM: 10. Notificación: PRD y Tareas Listas
-                deactivate Workflow
-                
-            else Generación Falla (RF3.0)
-                Modulo_IA--xWorkflow: 7. Error de Procesamiento
-                Workflow->>PM: 10. Notificación de Fallo Crítico
-                break Falla Crítica
-            end
-        else Transcripción Falla
-            Deepgram--xWorkflow: 5. Error de Servicio
-            Workflow->>Workflow: 5.1. Esperar 1min y Reintentar
-            
-        end
-    end
-    
-    opt Si Falla el último Reintento (RNF5.0)
-        Workflow->>PM: 11. Notificación de Fallo de Transcripción
-        deactivate Workflow
-    end
-```
-
-## 3. Objetivos y Métricas (KPI)
-
-### **Visión del Proyecto:**
-Ser el puente de documentación sin fisuras entre la ideación conceptual y la implementación de ingeniería.
-
-### **Metas Principales:**
-1. **Reducir el tiempo de conversión** de "Reunión a Tarea Asignada" en un **70%**
-2. **Garantizar una formulación de requisitos no ambigua**
-3. **Lograr una tasa de precisión del 85%** en la asignación de roles
-
-### **Métricas de Éxito (KPI):**
-
-| KPI | Descripción | Objetivo |
-| :--- | :--- | :--- |
-| **Tasa de Adopción** | Usuarios activos de la extensión por mes | Crecimiento mensual sostenido |
-| **Tiempo de Conversión** | Tiempo promedio de "Reunión a Tarea Asignada" (minutos) | Reducción del 70% vs. proceso manual |
-| **Precisión de Asignación** | Porcentaje de precisión en la asignación automática de tareas | ≥ 85% |
-| **NPS (Net Promoter Score)** | Satisfacción del usuario relacionado con la claridad del PRD generado | ≥ 8.0/10 |
-
-## 4. Requisitos Detallados Adicionales
-
-### **Requisitos Funcionales Refinados:**
-
-**RF4.0 - Asignación Inteligente de Tareas:**
-El flujo de trabajo DEBE clasificar el requisito y asignarlo automáticamente para los roles predefinidos:
-- **Full Stack Developer**
-- **Backend Developer** 
-- **Frontend Developer**
-- **Cloud Engineer**
-- **UX Designer**
-
-**RF5.0 - Integración con PMS:**
-El flujo de trabajo DEBE ser capaz de crear tareas o historias de usuario en los siguientes sistemas:
-- **Jira** (Atlassian API)
-- **Trello** (Trello API)
-- **Linear** (Linear API)
-
-### **Requisitos No Funcionales Específicos:**
-
-**RNF1.0 - Rendimiento:**
-El proceso de generación de PRD y asignación DEBE completarse en **menos de 5 minutos** después de finalizar la reunión.
-
-**RNF2.0 - Seguridad:**
-El flujo de trabajo DEBE manejar tokens de API y credenciales de forma segura mediante:
-- Cifrado de credenciales en reposo
-- Uso de variables de entorno para tokens
-- Rotación automática de credenciales cuando sea posible
-- Auditoría de accesos a APIs externas
-
-**RNF5.0 - Tolerancia a Fallos (Existente):**
-Máximo 3 intentos de reintento con espera de 1 minuto entre intentos para servicios externos.
-
-## 5. Hitos del Proyecto (Milestones)
-
-### **Hito 1: Lanzamiento del MVP**
-**Alcance:**
-- Grabación desde Google Meet
-- Disparo de Webhook
-- Transcripción con Deepgram
-- Generación de PRD básico (sin asignación automática)
-
-**Entregables:**
-- Extensión de Chrome funcional
-- Webhook endpoint operativo
-- Integración con Deepgram
-- Generación básica de PRD
-
-### **Hito 2: Workflow Completo**
-**Alcance:**
-- Implementación de Asignación Inteligente (RF4.0)
-- Integración completa con Jira (RF5.0)
-- Optimización de rendimiento (RNF1.0)
-
-**Entregables:**
-- Sistema de clasificación de requisitos por rol
-- Integración funcional con Jira API
-- Cumplimiento del objetivo de < 5 minutos (RNF1.0)
-- Dashboard de métricas básicas
-
-### **Hito 3: Integración Completa y Estabilización**
-**Alcance:**
-- Integración con Microsoft Teams
-- Soporte para Trello y Linear (RF5.0)
-- Estabilización del Workflow
-- Implementación completa de seguridad (RNF2.0)
-
-**Entregables:**
-- Extensión compatible con Microsoft Teams
-- APIs integradas: Jira, Trello, Linear
-- Sistema de gestión segura de credenciales
-- Documentación completa de usuario
-- Métricas de KPI implementadas
-
-# Arquitectura y Stack Tecnológico del Proyecto Meet-Teams-to-PRD
-
-## 1. Principios Arquitectónicos
-
-El proyecto M2PRD-001 adopta un modelo arquitectónico **distribuido y orientado a servicios ligeros** que prioriza:
-
-- **Rapidez de Desarrollo**: Cada componente puede desarrollarse y desplegarse independientemente
-- **Escalabilidad Horizontal**: Los servicios pueden escalar según la demanda específica
-- **Desacoplamiento**: Fallos en un componente no comprometen todo el sistema
-- **Flexibilidad Tecnológica**: Cada servicio utiliza el stack más apropiado para su función específica
-- **Mantenibilidad**: Separación clara de responsabilidades facilita el mantenimiento y evolución
-
-Esta arquitectura permite cumplir eficientemente con los requisitos de rendimiento (RNF1.0: < 5 minutos) y tolerancia a fallos (RNF5.0).
-
-## 2. Stack Tecnológico Central 🛠️
-
-| Componente | Stack Recomendado | Justificación RNF/RF Clave |
-| :--- | :--- | :--- |
-| **Frontend/Disparador (RF1.0)** | Extensión de Chrome con Vanilla JS / React Ligero | El énfasis está en ser un trigger de datos (disparo de Webhook) y no en el procesamiento. Una biblioteca ligera o JS nativo minimiza la huella y acelera el desarrollo/carga en el navegador. |
-| **Backend/Motor de Procesamiento (RF3.0, RF4.0)** | Python (para Módulo IA/NLP) | Productividad y bibliotecas robustas (e.g., NLTK, spaCy, TensorFlow) para el procesamiento y clasificación de texto (Generación de PRD y Asignación Inteligente de Tareas). Este módulo se ejecutará como un servicio llamado por n8n/Make. |
-| **Persistencia de Datos** | Redis (Cache de Sesión) y PostgreSQL/MongoDB (Metadata) | Persistencia Políglota: Redis para el manejo rápido de metadatos de sesión/tokens (RF1.0, RNF2.0). PostgreSQL (SQL) para metadatos estructurados del sistema (auditoría de flujos) o MongoDB (NoSQL) si la estructura de los logs es variable (Priorizando RNF de Escalabilidad). |
-| **Orquestación/Flujo de Trabajo (RF1.0, RNF5.0)** | n8n / Make (Decisión del PRD) | Imprescindible (Prioridad 10/10): El PRD lo define como el Componente de Procesamiento Central. Gestiona las APIs (Deepgram, PMS) y la gestión de errores/reintentos (RNF5.0). |
-| **Infraestructura/Despliegue** | Serverless (AWS Lambda/Google Cloud Functions) + Docker/Kubernetes (para n8n/Make) | Escalabilidad y Rendimiento (RNF1.0): El módulo IA/NLP se beneficia de la ejecución bajo demanda (Serverless). n8n/Make (si es autogestionado) debe ejecutarse en contenedores (Docker/K8s) para portabilidad y robustez. |
-
-## 3. Componentes y Decisiones Clave
-
-### 3.1. Backend/Motor de Procesamiento (Módulo IA/NLP) 🐍
-
-**Lenguaje Elegido:** Python
-
-**Justificación Fundamental:**
-El corazón del proyecto M2PRD-001 es el **Procesamiento del Lenguaje Natural (PLN)** para la Generación de PRD (RF3.0) y la Asignación Inteligente de Tareas (RF4.0).
-
-**Ventajas Técnicas:**
-- **Estándar de facto** en Minería de Datos en la Web y PLN moderno
-- **Ecosistema de bibliotecas especializado:**
-  - `SciPy` - Computación científica y análisis estadístico
-  - `Scikit-learn` - Algoritmos de machine learning para clasificación de requisitos
-  - `Hugging Face Transformers` - Modelos de lenguaje preentrenados (BERT, GPT, etc.)
-  - `NLTK` y `spaCy` - Análisis de texto y extracción de entidades
-  - `TensorFlow`/`PyTorch` - Deep learning para modelos avanzados
-- **Aceleración de desarrollo** mediante bibliotecas maduras y probadas
-- **Versatilidad** para implementar modelos de clasificación y extracción de información
-- **Amplia comunidad** y documentación especializada en IA/NLP
-
-**Arquitectura de Ejecución:**
-El flujo de trabajo en n8n/Make consumirá la transcripción y llamará a un **servicio serverless o microservicio** escrito en Python para realizar el procesamiento. Esta arquitectura mantiene la **rapidez de desarrollo** y la **versatilidad** operacional.
-
-### 3.2. Persistencia de Datos: Persistencia Políglota 💾
-
-**Enfoque Estratégico:**
-Se adopta un enfoque de **persistencia políglota** para satisfacer las distintas necesidades de datos del sistema, optimizando cada tipo de almacenamiento según su propósito específico.
-
-#### **PostgreSQL (Base de Datos Relacional)**
-- **Uso Primario:** Metadata estructurada del sistema y **auditoría crítica** de flujos de trabajo
-- **Justificación Detallada:**
-  - **Integridad ACID** para datos críticos del sistema
-  - **Esquemas relacionales** para trazabilidad completa de procesos
-  - **Soporte robusto** para consultas complejas de auditoría (RNF5.0)
-  - **Consistencia de datos** para configuraciones de usuarios y roles predefinidos (RF4.0)
-- **Casos de Uso Específicos:**
-  - Datos de usuario y configuraciones de extensión
-  - Roles predefinidos para asignación inteligente (Full Stack, Backend, Frontend, Cloud, UX)
-  - **Registro de auditoría** de flujos de trabajo (RNF5.0)
-  - Métricas de KPI y seguimiento de rendimiento
-  - Logs de ejecución estructurados
-
-#### **Redis (Key-Value Store)**
-- **Uso Primario:** Caché de alto rendimiento para datos temporales y credenciales
-- **Justificación Detallada:**
-  - **Alto rendimiento** y baja latencia para acceso frecuente (RNF2.0)
-  - **Resiliencia** en el acceso a datos críticos
-  - **Gestión segura** de tokens de API y credenciales (RNF2.0)
-  - **Expiración automática** para metadatos de sesión de corta duración
-- **Casos de Uso Específicos:**
-  - Tokens de autenticación para APIs externas (Deepgram, Jira, Trello, Linear)
-  - Credenciales temporales y rotación de secretos
-  - Estado de sesiones activas durante procesamiento
-  - Caché de respuestas de APIs para optimización
-  - Metadatos de ejecución temporal
-
-#### **MongoDB (Base de Datos NoSQL - Opcional)**
-- **Uso Potencial:** Almacenamiento flexible para documentos de estructura variable
-- **Justificación Detallada:**
-  - **Flexibilidad de esquema** para PRDs generados con formato variable
-  - **Escalabilidad horizontal** ante grandes volúmenes de datos
-  - **Capacidad de indexación** para búsquedas complejas en transcripciones
-- **Casos de Uso Potenciales:**
-  - Almacenamiento de PRDs generados con estructura dinámica
-  - Transcripciones procesadas y metadata asociada
-  - Logs del sistema no estructurados
-  - Documentos de requisitos con formato variable
-
-### 3.3. Orquestación e Infraestructura: Escalabilidad y Monitoreo
-
-#### **Orquestador Central: n8n / Make**
-- **Restricción Arquitectónica:** Inamovible según PRD (Prioridad 10/10)
-- **Justificación Estratégica:** 
-  - **Simplifica la integración** con servicios externos (Deepgram, Jira/Trello/Linear API) (RF5.0)
-  - **Gestión robusta de errores** y reintentos automáticos
-  - **Interface visual** para diseño y debugging de flujos complejos
-  - **Conectores nativos** para APIs de terceros
-  - **Gestión declarativa de errores** sin código personalizado
-- **Rol Crítico:** Coordinación de toda la lógica de negocio y mitigación del riesgo de dependencia del flujo de trabajo (RNF5.0)
-
-#### **Infraestructura Híbrida Optimizada:**
-
-**Serverless (AWS Lambda/Google Cloud Functions):**
-- **Componente:** Módulo IA/NLP Python
-- **Justificación Detallada:**
-  - **Garantiza el Rendimiento (RNF1.0)** mediante escalado instantáneo
-  - **Escalabilidad ante picos de demanda** (fin de reuniones Meet/Teams)
-  - **Optimización de costos** con pago por ejecución únicamente
-  - **Alta disponibilidad** sin gestión de infraestructura
-  - **Aislamiento de recursos** para cada procesamiento
-- **Ventajas Operacionales:**
-  - Escalado automático según carga de trabajo
-  - Sin overhead de mantenimiento de servidores
-  - Cumplimiento automático de RNF1.0 (< 5 minutos)
-
-**Contenedores (Docker/Kubernetes):**
-- **Componente:** Orquestador n8n/Make (despliegue autogestionado)
-- **Justificación Detallada:**
-  - **Portabilidad completa** entre entornos (desarrollo, staging, producción)
-  - **Robustez operacional** con control total sobre el flujo de trabajo
-  - **Simplifica mantenimiento y monitoreo** del flujo crítico (RNF5.0)
-  - **Gestión de recursos** predecible y controlada
-- **Ventajas Estratégicas:**
-  - Despliegue consistente en entornos robustos
-  - Escalado horizontal controlado
-  - Monitoring y observabilidad integrada
-  - Recuperación rápida ante fallos
-
-## 4. Seguridad y Gestión de Riesgos (RNFs)
-
-### **Seguridad (RNF2.0): Gestión de Credenciales y Tokens**
-
-#### **Restricción de Seguridad Crítica:**
-La gestión de tokens **DEBE delegarse** a un gestor de secretos dedicado y **NO almacenarse directamente** en el código de la extensión o el flujo de trabajo.
-
-#### **Implementación de Seguridad:**
-- **Gestores de Secretos Recomendados:**
-  - `AWS Secrets Manager` - Para infraestructura en AWS
-  - `Azure Key Vault` - Para infraestructura en Azure
-  - `HashiCorp Vault` - Para entornos híbridos o multi-cloud
-- **Características de Seguridad:**
-  - **Rotación automática** de tokens de API
-  - **Cifrado en tránsito y reposo** para todas las credenciales
-  - **Control de acceso granular** por servicio y usuario
-  - **Auditoría completa** de accesos a credenciales
-
-#### **Nota Importante sobre n8n/Make:**
-Aunque n8n/Make ya gestiona credenciales de forma interna, se recomienda la integración con gestores de secretos externos para cumplir con estándares empresariales de seguridad.
-
-### **Orquestación (RNF5.0): Mitigación del Riesgo Máximo**
-
-#### **Identificación del Riesgo Crítico:**
-El **riesgo de dependencia del flujo de trabajo es MÁXIMO**. La paralización del orquestador compromete todo el sistema.
-
-#### **Justificación de la Elección n8n/Make:**
-La elección de n8n/Make es **correcta y estratégica** porque:
-- **Gestión de errores robusta** nativa
-- **Sistema de reintentos** configurable y declarativo
-- **Monitoreo integrado** de flujos de trabajo
-- **Recuperación automática** ante fallos temporales
-
-#### **Estrategias de Mitigación:**
-- **Gestión de Errores Avanzada:**
-  - Reintentos exponenciales configurables (máximo 3 intentos)
-  - Timeout personalizado por servicio externo
-  - Notificaciones automáticas en caso de fallo crítico
-- **Circuit Breaker Pattern:**
-  - Protección contra cascadas de fallos en servicios externos
-  - Aislamiento de servicios problemáticos
-  - Recuperación automática cuando el servicio se estabiliza
-- **Monitoreo Proactivo:**
-  - Alertas en tiempo real para servicios críticos
-  - Métricas de salud de cada componente
-  - Dashboards de observabilidad integrados
-- **Procedimientos de Contingencia:**
-  - Recuperación manual para fallos críticos del orquestador
-  - Backups automáticos de configuraciones de flujo
-  - Documentación de procedimientos de emergencia
-
-## 6. Development Setup
-
-### **Development Commands:**
-```bash
-# Chrome Extension Development
-npm install
-npm run build:dev
-npm run watch
-
-# Python IA/NLP Module
-pip install -r requirements.txt
-python -m pytest tests/
-python app.py --dev
-
-# Docker Containers (n8n self-hosted)
-docker-compose up -d
-docker-compose logs -f n8n
-
-# Infrastructure as Code
-terraform init
-terraform plan
-terraform apply
-```
-
-### **Environment Setup:**
-```bash
-# Required Environment Variables
-export DEEPGRAM_API_KEY=<secret>
-export OPENAI_API_KEY=<secret>
-export JIRA_API_TOKEN=<secret>
-export TRELLO_API_KEY=<secret>
-export LINEAR_API_KEY=<secret>
-```
-
-## 7. Architecture Implementation Notes
-
-### **Key Design Patterns:**
-- **Orchestration Pattern**: Central workflow manages all service interactions
-- **Event-Driven Architecture**: Webhook triggers initiate processing chains
-- **Retry Pattern**: Implement exponential backoff for service failures
-- **Circuit Breaker**: Protect against cascading failures in external services
-
-### **Integration Points:**
-- Deepgram API for audio transcription
-- OpenAI/Claude API for requirement extraction
-- Jira/Trello/Linear APIs for task creation
-- Chrome Extension APIs for meeting capture
-- Microsoft Teams API for expanded meeting support
-
-### **Error Handling Requirements:**
-- Maximum 3 retry attempts for transcription failures
-- 1-minute wait between retry attempts
-- Fallback notifications to PM on critical failures
-- Comprehensive logging for debugging workflow issues
-- Security audit trails for API access
-
-## 7. Architecture Implementation Notes
-
-### **Key Design Patterns:**
-- **Orchestration Pattern**: Central workflow manages all service interactions
-- **Event-Driven Architecture**: Webhook triggers initiate processing chains
-- **Retry Pattern**: Implement exponential backoff for service failures
-- **Circuit Breaker**: Protect against cascading failures in external services
-
-### **Integration Points:**
-- Deepgram API for audio transcription
-- OpenAI/Claude API for requirement extraction
-- Jira/Trello/Linear APIs for task creation
-- Chrome Extension APIs for meeting capture
-- Microsoft Teams API for expanded meeting support
-
-### **Error Handling Requirements:**
-- Maximum 3 retry attempts for transcription failures
-- 1-minute wait between retry attempts
-- Fallback notifications to PM on critical failures
-- Comprehensive logging for debugging workflow issues
-- Security audit trails for API access
 
 ---
 
----
+## ⚠️ Advertencias Críticas sobre Implementación TDD
 
-## ⚠️ Advertencias Críticas sobre Implementación
+### Revisión Humana Obligatoria para TDD
 
-### Revisión Humana Obligatoria
+**IMPORTANTE**: La metodología TDD con IA requiere supervisión humana especializada:
 
-**IMPORTANTE**: Este documento contiene arquitecturas y patrones de diseño generados con asistencia de IA. Antes de implementar cualquier parte de esta arquitectura:
+1. **Revisión de Tests**: Un desarrollador senior debe validar que los tests realmente definen el comportamiento correcto del negocio.
 
-1. **Revisión de Arquitectura**: Un arquitecto de software senior debe revisar y validar todas las decisiones arquitectónicas propuestas.
+2. **Validación del Ciclo RED-GREEN-REFACTOR**: Verificar que cada paso del ciclo TDD se ejecuta correctamente y que el refactoring aplica principios arquitectónicos apropiados.
 
-2. **Validación de Patrones**: Los patrones de diseño deben ser evaluados en el contexto específico del proyecto para confirmar su aplicabilidad.
+3. **Cobertura de Casos Edge**: Los tests generados por IA pueden no cubrir todos los casos límite críticos del dominio específico.
 
-3. **Testing Exhaustivo**: Todos los componentes críticos requieren pruebas unitarias, de integración y de carga antes del despliegue.
+4. **Integración con Requisitos**: Validar que los tests TDD realmente verifican el cumplimiento de RF/RNF específicos del proyecto.
 
-4. **Revisión de Seguridad**: Un especialista en seguridad debe validar las implementaciones de RNF2.0 (gestión de credenciales y tokens).
+5. **Performance de Tests**: Verificar que la suite de tests se ejecuta en tiempo razonable para mantener el ciclo TDD ágil.
 
-5. **Validación de Rendimiento**: Los requisitos de RNF1.0 (< 5 minutos) deben ser validados con datos reales en entorno similar a producción.
+### Limitaciones Específicas de TDD + LLM
 
-### Limitaciones de LLMs
+- **Sesgos en Tests**: Los tests pueden reflejar sesgos del modelo y no cubrir escenarios reales del negocio
+- **Over-Testing**: Tendencia a generar tests excesivamente complejos o innecesarios
+- **Acoplamiento Inadecuado**: Tests que se acoplan demasiado a la implementación en lugar de al comportamiento
 
-- **Alucinaciones**: El código y arquitecturas generadas pueden contener errores sutiles que parecen correctos
-- **Contexto Limitado**: Algunos detalles específicos del proyecto pueden no haber sido considerados completamente
-- **Evolución Tecnológica**: Las mejores prácticas y bibliotecas recomendadas deben ser validadas con versiones actuales
+### Proceso TDD Recomendado con IA
 
-### Proceso de Implementación Recomendado
+1. **Fase 1**: Definir comportamiento de negocio con stakeholders humanos
+2. **Fase 2**: Generar tests iniciales con IA, revisar con experto de dominio
+3. **Fase 3**: Aplicar ciclo RED-GREEN-REFACTOR con revisión continua
+4. **Fase 4**: Validar cobertura y calidad con métricas reales
 
-1. **Fase 1**: Implementar MVP con arquitectura simplificada
-2. **Fase 2**: Validar patrones con métricas reales 
-3. **Fase 3**: Refactorizar aplicando principios avanzados gradualmente
-4. **Fase 4**: Optimización basada en datos de producción
+**El éxito del TDD requiere experiencia humana en diseño de tests, conocimiento del dominio de negocio y criterio técnico para balancear cobertura vs. mantenibilidad.**
 
-**La implementación exitosa de estos principios requiere experiencia humana, juicio técnico y validación continua con métricas reales del sistema.**
-
-⚠️ **Nota sobre la Generación de Código y Alucinaciones:** Cualquier código o *snippet* generado con ayuda de IA (LLMs) debe ser **siempre** verificado y probado exhaustivamente. El riesgo de 'alucinaciones' del modelo (respuestas que suenan correctas pero son falsas) es una limitación crucial. Se requiere una revisión humana obligatoria antes del despliegue.
+⚠️ **Nota sobre TDD y Generación Automática**: Los tests generados automáticamente deben ser **siempre** revisados por un desarrollador experimentado antes de ser utilizados como base para el desarrollo. Un test mal diseñado puede llevar a implementaciones incorrectas que cumplan el test pero fallen en producción.
