@@ -249,3 +249,94 @@ class SubscriptionConsumptionService:
             ConsumptionVerificationResult: Estado actual del consumo
         """
         return await self.verificar_consumo_disponible(user_id, self._CONSULTATION_HOURS)
+    
+    async def actualizar_registro_consumo(
+        self, 
+        user_id: str, 
+        duration_minutes: int, 
+        meeting_id: str
+    ) -> 'ConsumptionUpdateResult':
+        """
+        🟢 TDD GREEN - Actualizar registro de consumo post-procesamiento (RF8.0).
+        
+        Esta función se ejecuta DESPUÉS del procesamiento exitoso de una reunión
+        para actualizar el consumo real de horas del usuario.
+        
+        CRÍTICO: Esta función debe ejecutarse dentro de una transacción ACID
+        para garantizar consistencia de datos financieros.
+        
+        Args:
+            user_id: Identificador del usuario
+            duration_minutes: Duración real de la reunión en minutos
+            meeting_id: Identificador único de la reunión procesada
+            
+        Returns:
+            ConsumptionUpdateResult: Resultado de la actualización
+            
+        Raises:
+            ValueError: Si los parámetros son inválidos
+            UserNotFoundException: Si el usuario no existe
+            DatabaseTransactionException: Si falla la transacción
+        """
+        from ..value_objects.consumption_response import ConsumptionUpdateResult
+        
+        # Validaciones de entrada
+        if not user_id:
+            raise ValueError("User ID cannot be empty")
+        if duration_minutes <= 0:
+            raise ValueError("Duration must be greater than 0")
+        if not meeting_id:
+            raise ValueError("Meeting ID cannot be empty")
+        
+        # Conversión de minutos a horas
+        hours_consumed = duration_minutes / 60.0
+        
+        # Verificar que el usuario existe
+        user = await self._user_repository.get_user_by_id(user_id)
+        if not user:
+            raise UserNotFoundException(user_id)
+        
+        # Obtener suscripción actual
+        subscription = await self._subscription_repository.get_active_subscription_by_user_id(user_id)
+        if not subscription:
+            raise SubscriptionNotFoundException(user_id)
+        
+        # Timestamp para auditoría
+        timestamp = datetime.utcnow()
+        
+        # Ejecutar transacción ACID
+        try:
+            await self._subscription_repository.begin_transaction()
+            
+            # Actualizar consumo en la entidad
+            updated_subscription = subscription.consume_hours(hours_consumed)
+            
+            # Persistir cambios con auditoría
+            await self._subscription_repository.update_subscription_with_audit(
+                subscription=updated_subscription,
+                audit_data={
+                    "action": "consumption_update",
+                    "hours_consumed": hours_consumed,
+                    "meeting_id": meeting_id,
+                    "timestamp": timestamp,
+                    "user_id": user_id
+                },
+                isolation_level="READ_COMMITTED"
+            )
+            
+            await self._subscription_repository.commit_transaction()
+            
+            # Calcular horas restantes
+            remaining_hours = updated_subscription.available_hours
+            
+            return ConsumptionUpdateResult(
+                success=True,
+                hours_consumed=hours_consumed,
+                remaining_hours=remaining_hours,
+                timestamp=timestamp
+            )
+            
+        except Exception as e:
+            await self._subscription_repository.rollback_transaction()
+            from ..exceptions.consumption_exceptions import DatabaseTransactionException
+            raise DatabaseTransactionException(f"Failed to update consumption: {str(e)}")

@@ -137,3 +137,17 @@ class SubscriptionSuspendedException(DomainException):
         self.user_id = user_id
         self.subscription_id = subscription_id
         self.reason = reason
+
+
+class DatabaseTransactionException(DomainException):
+    """
+    💾 EXCEPCIÓN TÉCNICA - Error en transacción de base de datos.
+    
+    Se lanza cuando falla una transacción ACID crítica, especialmente
+    en operaciones de consumo que requieren consistencia financiera.
+    """
+    
+    def __init__(self, message: str, transaction_id: str = None, user_id: str = None):
+        super().__init__(message, "DATABASE_TRANSACTION_FAILED")
+        self.transaction_id = transaction_id
+        self.user_id = user_id
