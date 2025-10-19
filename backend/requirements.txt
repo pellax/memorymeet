@@ -8,6 +8,10 @@
 fastapi==0.104.1                    # Modern, fast web framework for APIs
 uvicorn[standard]==0.24.0           # ASGI server con soporte para WebSockets
 
+# ===== 🔒 DOMAIN LAYER (FASE 1) =====
+typing-extensions==4.8.0            # Enhanced type hints para Clean Architecture
+dataclasses==0.8                    # Data classes para entities (Python 3.6 compatibility)
+
 # ===== 💾 BASE DE DATOS Y ORM (ACID COMPLIANCE) =====
 sqlalchemy==2.0.23                  # ORM robusto para transacciones ACID
 alembic==1.13.0                     # Migraciones de base de datos
