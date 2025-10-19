@@ -1,0 +1,346 @@
+# ================================================================================================
+# 🐳 DOCKER COMPOSE - M2PRD-001 SAAS V1.4 (DESARROLLO LOCAL)
+# ================================================================================================
+# Orquestación completa del ecosistema SaaS siguiendo Clean Architecture
+# Un comando para levantar todo: docker-compose up --build
+# Principio KISS: Keep It Simple, Stupid
+
+version: '3.8'
+
+# ===== REDES =====
+networks:
+  m2prd_network:
+    driver: bridge
+    name: m2prd_saas_network
+
+# ===== VOLÚMENES PERSISTENTES =====
+volumes:
+  postgres_data:
+    name: m2prd_postgres_data
+  redis_data:
+    name: m2prd_redis_data
+  n8n_data:
+    name: m2prd_n8n_data
+
+# ===== SERVICIOS =====
+services:
+  
+  # ===== 🔒 SERVICIO DE SUSCRIPCIONES/CONSUMO (GATEKEEPER - RF8.0) =====
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development  # Stage para desarrollo con hot-reload
+    container_name: m2prd_backend_gatekeeper
+    hostname: backend
+    restart: unless-stopped
+    
+    # Variables de entorno desde .env
+    env_file:
+      - .env
+    environment:
+      # Database configuration (ACID compliance)
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Redis configuration (Cache para RF8.0)
+      - REDIS_URL=redis://redis:6379/0
+      # Service URLs para comunicación interna
+      - IA_MODULE_URL=http://ia_module:8003
+      - N8N_WEBHOOK_URL=http://n8n:5678
+      # Security configuration (RNF2.0)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      # Performance configuration (RNF1.0)
+      - MAX_PROCESSING_TIME_SECONDS=300
+      - MAX_RETRY_ATTEMPTS=3
+    
+    # Puertos expuestos
+    ports:
+      - "8000:8000"  # API REST del backend
+    
+    # Dependencias críticas
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    
+    # Volumes para desarrollo (hot-reload)
+    volumes:
+      - ./backend/app:/app/app:ro  # Read-only para seguridad
+      - ./backend/tests:/app/tests:ro
+    
+    # Health check para el gatekeeper crítico
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    networks:
+      - m2prd_network
+    
+    # Logging estructurado (RNF4.0 - Observabilidad)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===== 🤖 MÓDULO IA/NLP (RF3.0, RF4.0) =====
+  ia_module:
+    build:
+      context: .
+      dockerfile: ia_module/Dockerfile
+    container_name: m2prd_ia_nlp
+    hostname: ia_module
+    restart: unless-stopped
+    
+    env_file:
+      - .env
+    environment:
+      # AI/ML Configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+      # Performance tuning para NLP
+      - MAX_AUDIO_DURATION_MINUTES=120  # RNF1.0
+      - NLP_MODEL_CACHE_SIZE=1000
+    
+    ports:
+      - "8003:8003"  # API del módulo IA
+    
+    volumes:
+      - ./ia_module/app:/app/app:ro
+      - ./ia_module/tests:/app/tests:ro
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/api/v1/health"]
+      interval: 60s  # Menos frecuente por ser serverless-like
+      timeout: 30s
+      retries: 2
+      start_period: 60s
+    
+    networks:
+      - m2prd_network
+    
+    # Resource limits para IA (puede ser intensivo)
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  # ===== 📊 ORQUESTACIÓN N8N (RF1.0-RF5.0) =====
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: m2prd_n8n_orchestrator
+    hostname: n8n
+    restart: unless-stopped
+    
+    environment:
+      # Database connection para workflows persistentes
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_DATABASE=${N8N_POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      
+      # n8n Configuration
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=development
+      
+      # Security
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+    
+    ports:
+      - "5678:5678"  # Web UI de n8n
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./infra/n8n/workflows:/home/node/.n8n/workflows:ro  # Workflows predefinidos
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    networks:
+      - m2prd_network
+
+  # ===== 💾 POSTGRESQL (ACID DATABASE - CRÍTICO) =====
+  postgres:
+    image: postgres:15-alpine
+    container_name: m2prd_postgres_acid
+    hostname: postgres
+    restart: unless-stopped
+    
+    # Variables críticas para ACID compliance
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_MULTIPLE_DATABASES=${N8N_POSTGRES_DB}  # DB adicional para n8n
+      
+      # Configuración ACID optimizada
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    
+    ports:
+      - "5432:5432"
+    
+    volumes:
+      # Persistencia crítica de datos
+      - postgres_data:/var/lib/postgresql/data
+      # Scripts de inicialización
+      - ./infra/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+      - ./infra/postgres/init-schema.sql:/docker-entrypoint-initdb.d/01-init-schema.sql:ro
+    
+    # Health check para base de datos crítica
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    
+    networks:
+      - m2prd_network
+    
+    # Configuración PostgreSQL para performance ACID
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+
+  # ===== ⚡ REDIS (CACHE Y SESSIONS - RF8.0) =====
+  redis:
+    image: redis:7-alpine
+    container_name: m2prd_redis_cache
+    hostname: redis
+    restart: unless-stopped
+    
+    # Configuración para cache de consumo (RF8.0)
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 300
+    
+    ports:
+      - "6379:6379"
+    
+    volumes:
+      - redis_data:/data
+      - ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    
+    networks:
+      - m2prd_network
+
+  # ===== 📈 PROMETHEUS (MÉTRICAS - RNF4.0) =====
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: m2prd_prometheus
+    hostname: prometheus
+    restart: unless-stopped
+    
+    ports:
+      - "9090:9090"
+    
+    volumes:
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    
+    networks:
+      - m2prd_network
+
+  # ===== 📊 GRAFANA (DASHBOARDS - RNF4.0) =====
+  grafana:
+    image: grafana/grafana:latest
+    container_name: m2prd_grafana
+    hostname: grafana
+    restart: unless-stopped
+    
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_USERS_ALLOW_ORG_CREATE=false
+    
+    ports:
+      - "3001:3000"  # Puerto diferente para evitar conflicto con frontend
+    
+    volumes:
+      - ./infra/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    
+    depends_on:
+      - prometheus
+    
+    networks:
+      - m2prd_network
+
+  # ===== 🎨 FRONTEND (PORTAL WEB - RF6.0, RF7.0) =====
+  # Nota: Se incluirá en la Fase 3, por ahora comentado
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: m2prd_frontend_portal
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - REACT_APP_API_URL=http://localhost:8000/api/v1
+  #     - REACT_APP_N8N_URL=http://localhost:5678
+  #   volumes:
+  #     - ./frontend/src:/app/src:ro
+  #   networks:
+  #     - m2prd_network
+
+# ===== CONFIGURACIONES ADICIONALES =====
+
+# Extensión para desarrollo avanzado
+x-common-variables: &common-variables
+  TZ: UTC
+  LOG_LEVEL: INFO
+  
+# Configuración de logging para todos los servicios
+x-logging: &default-logging
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"

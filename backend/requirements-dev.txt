@@ -1,0 +1,73 @@
+# ================================================================================================
+# 🧪 REQUIREMENTS-DEV - HERRAMIENTAS DE DESARROLLO Y TDD
+# ================================================================================================
+# Dependencias adicionales para desarrollo, testing y quality assurance
+# Metodología: TDD (Test-Driven Development) + Clean Code
+
+# ===== 🧪 TESTING FRAMEWORK (TDD CORE) =====
+pytest==7.4.3                       # Framework de testing principal
+pytest-asyncio==0.21.1              # Support para testing asíncrono
+pytest-mock==3.12.0                 # Mocking avanzado para TDD
+pytest-cov==4.1.0                   # Coverage reports
+pytest-xdist==3.5.0                 # Ejecución paralela de tests
+pytest-benchmark==4.0.0             # Performance benchmarking
+pytest-watch==4.2.0                 # Auto-reload de tests (TDD continuo)
+
+# ===== 🔍 QUALITY ASSURANCE =====
+black==23.11.0                      # Code formatter
+isort==5.12.0                       # Import sorter
+flake8==6.1.0                       # Linting y style checking
+mypy==1.7.1                         # Static type checking
+pre-commit==3.6.0                   # Git hooks para quality gates
+
+# ===== 📊 TESTING UTILITIES =====
+factory-boy==3.3.0                  # Test data factories
+faker==20.1.0                       # Fake data generation
+responses==0.24.1                   # HTTP requests mocking
+httpx-mock==0.10.0                  # HTTPX client mocking
+pytest-postgresql==5.0.0            # PostgreSQL fixtures para tests
+pytest-redis==3.0.2                 # Redis fixtures para tests
+
+# ===== 🔧 DEVELOPMENT TOOLS =====
+debugpy==1.8.0                      # Python debugger
+ipython==8.17.2                     # Interactive Python shell
+ipdb==0.13.13                       # IPython debugger
+rich==13.7.0                        # Rich text and beautiful formatting
+
+# ===== 📈 PROFILING Y PERFORMANCE =====
+line-profiler==4.1.1                # Line-by-line profiling
+memory-profiler==0.61.0             # Memory usage profiling
+py-spy==0.3.14                      # Sampling profiler
+
+# ===== 📋 DOCUMENTATION =====
+sphinx==7.2.6                       # Documentation generator
+sphinx-autodoc-typehints==1.25.2    # Type hints in docs
+mkdocs==1.5.3                       # Modern documentation
+mkdocs-material==9.4.8              # Material theme for mkdocs
+
+# ===== 🔄 DATABASE TESTING =====
+sqlalchemy-utils==0.41.1            # SQLAlchemy testing utilities
+pytest-alembic==0.10.7              # Alembic migrations testing
+
+# ===== 🌐 API TESTING =====
+httpx==0.25.2                       # Modern HTTP client for testing
+fastapi[testing]==0.104.1           # FastAPI testing utilities
+
+# ===== 📊 LOAD TESTING =====
+locust==2.17.0                      # Load testing framework
+
+# ===== 🔒 SECURITY TESTING =====
+bandit==1.7.5                       # Security linter
+safety==2.3.5                       # Dependency vulnerability scanner
+
+# ===== 📝 CODE ANALYSIS =====
+radon==6.0.1                        # Code complexity analysis
+xenon==0.9.1                        # Monitoring code complexity
+vulture==2.10                       # Dead code finder
+
+# ===== 🐳 CONTAINER TESTING =====
+testcontainers==3.7.1               # Integration testing with containers
+
+# ===== 🔍 DEBUGGING & MONITORING =====
+django-debug-toolbar==4.2.0         # Debug toolbar (if needed)
+sentry-sdk[fastapi]==1.38.0         # Error monitoring

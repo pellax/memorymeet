@@ -1,0 +1,61 @@
+# ================================================================================================
+# 🔒 REQUIREMENTS - BACKEND SERVICIO DE SUSCRIPCIONES/CONSUMO (RF8.0)
+# ================================================================================================
+# Dependencias de producción para el servicio crítico del sistema SaaS
+# Stack: Python 3.11 + FastAPI + SQLAlchemy + PostgreSQL + Redis
+
+# ===== 🚀 FRAMEWORK WEB =====
+fastapi==0.104.1                    # Modern, fast web framework for APIs
+uvicorn[standard]==0.24.0           # ASGI server con soporte para WebSockets
+
+# ===== 💾 BASE DE DATOS Y ORM (ACID COMPLIANCE) =====
+sqlalchemy==2.0.23                  # ORM robusto para transacciones ACID
+alembic==1.13.0                     # Migraciones de base de datos
+psycopg2-binary==2.9.9              # Driver PostgreSQL optimizado
+asyncpg==0.29.0                     # Driver async para PostgreSQL (performance)
+
+# ===== ⚡ CACHE Y SESSIONS =====
+redis==5.0.1                        # Cliente Redis para cache de consumo (RF8.0)
+aioredis==2.0.1                     # Cliente Redis asíncrono
+
+# ===== 🔒 SEGURIDAD Y AUTENTICACIÓN (RNF2.0) =====
+python-jose[cryptography]==3.3.0    # JWT tokens y cryptografía
+passlib[bcrypt]==1.7.4              # Hashing seguro de passwords
+python-multipart==0.0.6             # Para manejo de formularios y archivos
+
+# ===== 💰 STRIPE INTEGRATION (RF7.0) =====
+stripe==7.8.0                       # SDK oficial de Stripe para suscripciones
+
+# ===== 📊 VALIDACIÓN Y SERIALIZACIÓN =====
+pydantic==2.5.0                     # Validación robusta de datos
+pydantic-settings==2.1.0            # Gestión de configuración type-safe
+
+# ===== 🌐 HTTP CLIENT =====
+httpx==0.25.2                       # Cliente HTTP moderno y asíncrono
+aiohttp==3.9.1                      # Cliente HTTP alternativo para servicios externos
+
+# ===== 🔍 LOGGING Y OBSERVABILIDAD (RNF4.0) =====
+structlog==23.2.0                   # Logging estructurado
+prometheus-client==0.19.0           # Métricas para Prometheus
+opentelemetry-api==1.21.0          # Telemetría y tracing
+
+# ===== 📧 NOTIFICACIONES =====
+emails==0.6                         # Envío de emails (opcional)
+celery[redis]==5.3.4                # Task queue para procesos en background
+
+# ===== 🛡️ PATRONES DE RESILENCIA (RNF5.0) =====
+tenacity==8.2.3                     # Retry patterns para circuit breaker
+circuitbreaker==1.4.0               # Circuit breaker pattern
+
+# ===== ⚙️ CONFIGURACIÓN =====
+python-dotenv==1.0.0                # Carga de variables de entorno
+pydantic-settings==2.1.0            # Settings management
+
+# ===== 📅 UTILIDADES =====
+python-dateutil==2.8.2              # Manejo avanzado de fechas
+pytz==2023.3                        # Timezone handling
+uuid==1.30                          # UUID generation
+
+# ===== 📝 SERIALIZACIÓN =====
+orjson==3.9.10                      # JSON serializer ultra-rápido
+msgpack==1.0.7                      # Serialización binaria eficiente
