@@ -1,14 +1,673 @@
-# Proyecto Warp: Principios de Arquitectura y Buenas Prácticas
+# Proyecto Warp: Principios de Arquitectura y Buenas Prácticas y Metodología TDD
 
 This file provides guidance to WARP (warp.dev) when working with code in this repository.
 
 ## Contexto del Proyecto
 
+[INICIO CONTEXTO DEL PROYECTO]
 **M2PRD-001: Meet-Teams-to-PRD** es un sistema distribuido Python/JavaScript que transforma grabaciones de audio de reuniones en documentos PRD estructurados y tareas asignadas automáticamente. Utiliza una arquitectura de microservicios con orquestación centralizada (n8n/Make), procesamiento IA/NLP (Python), persistencia políglota (PostgreSQL/Redis/MongoDB) y despliegue híbrido (Serverless/Contenedores).
+
+**Stack principal**: Python 3.11+, JavaScript/TypeScript, PostgreSQL, Redis, MongoDB, n8n/Make, AWS Lambda, Docker/Kubernetes.
+**Dependencias clave**: FastAPI, SQLAlchemy, spaCy, OpenAI, Deepgram SDK, pytest, black, mypy.
+[FIN CONTEXTO DEL PROYECTO]
 
 ---
 
-## 1. Principios de Diseño: SOLID y KISS
+## 1. Metodología de Desarrollo: TDD (Test-Driven Development)
+
+### 1.1. Fundamentos del Ciclo TDD
+
+**TDD es el pilar fundamental del desarrollo en M2PRD-001.** Cada funcionalidad debe seguir estrictamente el ciclo **Rojo-Verde-Refactorización**:
+
+```
+🔴 RED (Rojo)    → Escribir un test que falle
+🟢 GREEN (Verde) → Escribir código mínimo para pasar el test  
+🔵 REFACTOR      → Mejorar el código manteniendo los tests pasando
+```
+
+### 1.2. Implementación del Ciclo TDD en M2PRD-001
+
+#### **Paso 1: RED - Test que Falla**
+```python path=null start=null
+# ✅ TDD RED - Comenzamos con el test que define el comportamiento esperado
+import pytest
+from unittest.mock import Mock
+from meeting_processor import MeetingProcessor, ProcessingResult
+from exceptions import InvalidMeetingUrlException
+
+class TestMeetingProcessor:
+    """✅ TDD - Test First: Definimos comportamiento antes de implementar."""
+    
+    def test_should_process_google_meet_url_successfully(self):
+        """RED: Test que falla inicialmente - define el comportamiento."""
+        # Given
+        meeting_processor = MeetingProcessor(
+            transcription_service=Mock(),
+            prd_generator=Mock(),
+            task_assigner=Mock()
+        )
+        meeting_url = "https://meet.google.com/abc-defg-hij"
+        
+        # When
+        result = meeting_processor.process_meeting(meeting_url)
+        
+        # Then - Define el comportamiento esperado
+        assert result.success is True
+        assert result.prd is not None
+        assert result.processing_time_seconds < 300  # RNF1.0: < 5 minutos
+        assert len(result.tasks) > 0
+```
+
+#### **Paso 2: GREEN - Implementación Mínima**
+```python path=null start=null
+# ✅ TDD GREEN - Código mínimo para hacer pasar los tests
+class MeetingProcessor:
+    """✅ TDD GREEN - Implementación mínima que satisface los tests."""
+    
+    def __init__(self, transcription_service, prd_generator, task_assigner):
+        self.transcription_service = transcription_service
+        self.prd_generator = prd_generator
+        self.task_assigner = task_assigner
+    
+    def process_meeting(self, meeting_url: str) -> ProcessingResult:
+        """Implementación mínima para pasar los tests."""
+        # Validación básica
+        if not self._is_valid_meeting_url(meeting_url):
+            raise InvalidMeetingUrlException(f"Invalid meeting URL: {meeting_url}")
+        
+        # Implementación mínima para pasar el test
+        mock_prd = PRD(id="test-prd", titulo="Test PRD")
+        mock_tasks = [TareaAsignada(id_tarea="task-1", descripcion="Test task")]
+        
+        return ProcessingResult(
+            success=True,
+            prd=mock_prd,
+            tasks=mock_tasks,
+            processing_time_seconds=45.0  # < 300 segundos (RNF1.0)
+        )
+```
+
+#### **Paso 3: REFACTOR - Mejora del Diseño**
+```python path=null start=null
+# ✅ TDD REFACTOR - Aplicamos principios SOLID y Clean Architecture
+from abc import ABC, abstractmethod
+from typing import Protocol
+
+# Aplicamos ISP (Interface Segregation Principle)
+class AudioProcessor(Protocol):
+    def process_audio(self, audio_url: str) -> str: pass
+
+class RequirementExtractor(Protocol):
+    def extract_requirements(self, transcription: str) -> List['Requisito']: pass
+
+class MeetingProcessor:
+    """
+    ✅ TDD REFACTOR - Código mejorado manteniendo tests verdes.
+    
+    Ahora aplica principios SOLID:
+    - SRP: Solo procesa reuniones
+    - DIP: Depende de abstracciones
+    - ISP: Interfaces específicas
+    """
+    
+    def __init__(
+        self, 
+        audio_processor: AudioProcessor,
+        requirement_extractor: RequirementExtractor,
+        task_assigner: TaskAssigner
+    ):
+        self.audio_processor = audio_processor
+        self.requirement_extractor = requirement_extractor
+        self.task_assigner = task_assigner
+    
+    def process_meeting(self, meeting_url: str) -> ProcessingResult:
+        """✅ REFACTOR - Implementación robusta que mantiene tests verdes."""
+        # Procesamiento con mejor separación de responsabilidades
+        transcription = self.audio_processor.process_audio(meeting_url)
+        requirements = self.requirement_extractor.extract_requirements(transcription)
+        
+        prd = self._generate_prd_from_requirements(requirements)
+        tasks = self.task_assigner.assign_tasks(requirements)
+        
+        return ProcessingResult(
+            success=True,
+            prd=prd,
+            tasks=tasks,
+            processing_time_seconds=time.time() - start_time
+        )
+```
+
+### 1.3. TDD para RF4.0 - Asignación Inteligente de Tareas
+
+```python path=null start=null
+class TestRoleAssignmentFactory:
+    """✅ TDD para RF4.0 - Asignación Inteligente de Tareas."""
+    
+    def test_should_assign_frontend_developer_for_ui_requirements(self):
+        """RED: Test que define comportamiento de clasificación."""
+        # Given
+        ui_requirement = Requisito(
+            descripcion="Necesitamos una interfaz React responsive",
+            tipo=RequirementType.FUNCTIONAL
+        )
+        
+        # When
+        assigned_role = RoleAssignmentFactory.get_assignee_for_requirement(ui_requirement)
+        
+        # Then
+        assert assigned_role == "Frontend Developer"
+    
+    def test_should_assign_backend_developer_for_api_requirements(self):
+        """RED: Test para clasificación de APIs."""
+        # Given
+        api_requirement = Requisito(
+            descripcion="Implementar API REST para autenticación",
+            tipo=RequirementType.FUNCTIONAL
+        )
+        
+        # When
+        assigned_role = RoleAssignmentFactory.get_assignee_for_requirement(api_requirement)
+        
+        # Then
+        assert assigned_role == "Backend Developer"
+
+# GREEN: Factory que cumple con los tests
+class RoleAssignmentFactory:
+    @classmethod
+    def get_assignee_for_requirement(cls, requirement: Requisito) -> str:
+        description_lower = requirement.descripcion.lower()
+        
+        if any(keyword in description_lower for keyword in ['react', 'ui', 'interface']):
+            return "Frontend Developer"
+        elif any(keyword in description_lower for keyword in ['api', 'rest', 'autenticación']):
+            return "Backend Developer"
+        else:
+            return "Full Stack Developer"
+```
+
+---
+
+## 2. Principios de Diseño: SOLID y KISS (Potenciados por TDD)
+
+### 2.1. TDD + Single Responsibility Principle (SRP)
+
+**TDD facilita SRP porque cada test se enfoca en una responsabilidad específica.**
+
+```python path=null start=null
+class TestTranscriptionService:
+    """✅ TDD para servicio con responsabilidad única: transcripción."""
+    
+    def test_should_transcribe_audio_file_successfully(self):
+        """Test enfocado en una sola responsabilidad."""
+        # Given
+        transcription_service = TranscriptionService(deepgram_client=Mock())
+        audio_file = AudioFile(url="http://example.com/audio.mp3", size_mb=5.2)
+        
+        # When
+        result = transcription_service.transcribe(audio_file)
+        
+        # Then
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+class TranscriptionService:
+    """✅ SRP - Solo se encarga de transcripción de audio."""
+    
+    def transcribe(self, audio_file: AudioFile) -> str:
+        """Unica responsabilidad: transcribir audio a texto."""
+        self._validate_audio_file(audio_file)
+        
+        response = self.deepgram_client.transcription.prerecorded(
+            {'url': audio_file.url},
+            {'punctuate': True, 'model': 'nova'}
+        )
+        
+        return self._extract_transcript_text(response)
+```
+
+### 2.2. TDD + Dependency Inversion Principle (DIP)
+
+**TDD promueve DIP porque facilita el uso de mocks y abstracciones.**
+
+```python path=null start=null
+class TestPRDGenerationService:
+    """✅ TDD que promueve inversión de dependencias."""
+    
+    @pytest.fixture
+    def mock_requirement_extractor(self):
+        mock = Mock(spec=RequirementExtractor)
+        mock.extract_requirements.return_value = [
+            Requisito(id="req-1", descripcion="Test requirement")
+        ]
+        return mock
+    
+    def test_should_generate_prd_from_transcription(
+        self, mock_requirement_extractor
+    ):
+        """TDD usando abstracciones (DIP)."""
+        # Given
+        prd_service = PRDGenerationService(
+            requirement_extractor=mock_requirement_extractor  # ✅ DIP
+        )
+        transcription = "We need user authentication"
+        
+        # When
+        prd = prd_service.generate_prd(transcription)
+        
+        # Then
+        assert prd is not None
+        assert len(prd.requirements) > 0
+        mock_requirement_extractor.extract_requirements.assert_called_once()
+
+class PRDGenerationService:
+    """✅ DIP - Depende de abstracciones, no de implementaciones concretas."""
+    
+    def __init__(self, requirement_extractor: RequirementExtractor):
+        self.requirement_extractor = requirement_extractor  # ✅ DIP
+    
+    def generate_prd(self, transcription: str) -> PRD:
+        requirements = self.requirement_extractor.extract_requirements(transcription)
+        return PRD(requirements=requirements)
+```
+
+---
+
+## 3. Estrategias de Arquitectura: Clean Architecture (Guiada por TDD)
+
+### 3.1. TDD para Use Cases (Application Layer)
+
+```python path=null start=null
+class TestProcessMeetingUseCase:
+    """✅ TDD para caso de uso principal del sistema."""
+    
+    def test_should_execute_complete_meeting_processing_flow(self):
+        """RED: Test que define el flujo completo."""
+        # Given - Setup con dependencias mockeadas
+        deps = {
+            'meeting_repository': Mock(spec=MeetingRepository),
+            'transcription_service': Mock(spec=TranscriptionService),
+            'prd_generator': Mock(spec=PRDGenerationService)
+        }
+        use_case = ProcessMeetingUseCase(**deps)
+        
+        command = ProcessMeetingCommand(
+            meeting_id="meeting-123",
+            audio_url="https://example.com/audio.mp3"
+        )
+        
+        # When
+        response = use_case.execute(command)
+        
+        # Then - Verificar comportamiento completo
+        assert response.success is True
+        assert response.processing_time_seconds < 300  # RNF1.0
+        deps['meeting_repository'].get_by_id.assert_called_once()
+
+class ProcessMeetingUseCase:
+    """
+    ✅ Clean Architecture + TDD - Use Case en Application Layer.
+    Orquesta el flujo sin conocer detalles de implementación.
+    """
+    
+    def execute(self, command: ProcessMeetingCommand) -> ProcessMeetingResponse:
+        # 1. Recuperar reunión (Infrastructure)
+        meeting = self._meeting_repository.get_by_id(command.meeting_id)
+        
+        # 2. Transcribir audio (Infrastructure)
+        transcription = self._transcription_service.transcribe(meeting.audio_url)
+        
+        # 3. Generar PRD (Domain Service)
+        prd = self._prd_generator.generate_prd(transcription)
+        
+        # 4. Crear tareas (Domain Logic)
+        tasks = self._create_tasks_from_prd(prd)
+        
+        return ProcessMeetingResponse(success=True, prd=prd, tasks=tasks)
+```
+
+---
+
+## 4. Bases de Datos: Principios ACID (Validados con TDD)
+
+### 4.1. TDD para Transacciones ACID
+
+```python path=null start=null
+class TestDatabaseTransactionManager:
+    """✅ TDD para gestión de transacciones ACID."""
+    
+    def test_should_commit_transaction_when_successful(self, db_manager):
+        """RED: Test para propiedad ATOMICITY y DURABILITY."""
+        # Given
+        meeting = Meeting(id="meeting-123", audio_url="http://example.com/audio.mp3")
+        prd = PRD(id="prd-456", titulo="Test PRD")
+        
+        # When
+        with db_manager.transaction() as session:
+            session.add(meeting)
+            session.add(prd)
+        
+        # Then - Verificar DURABILITY
+        with db_manager.transaction() as session:
+            saved_meeting = session.get(Meeting, "meeting-123")
+            assert saved_meeting is not None
+    
+    def test_should_rollback_transaction_when_error_occurs(self, db_manager):
+        """RED: Test para propiedad ATOMICITY en caso de error."""
+        # Given & When
+        with pytest.raises(ValueError):
+            with db_manager.transaction() as session:
+                meeting = Meeting(id="meeting-123")
+                session.add(meeting)
+                raise ValueError("Simulated error")  # Debe causar rollback
+        
+        # Then - Verificar ATOMICITY (rollback)
+        with db_manager.transaction() as session:
+            saved_meeting = session.get(Meeting, "meeting-123")
+            assert saved_meeting is None  # No debe existir por rollback
+
+class DatabaseTransactionManager:
+    """✅ TDD - Gestor que garantiza propiedades ACID."""
+    
+    @contextmanager
+    def transaction(self) -> Generator[Session, None, None]:
+        """
+        ✅ ACID Context Manager que garantiza:
+        - ATOMICITY: Todo o nada mediante commit/rollback
+        - CONSISTENCY: Validaciones antes del commit
+        - ISOLATION: Sesiones aisladas por transacción
+        - DURABILITY: Cambios persistentes tras commit exitoso
+        """
+        session = self.SessionLocal()
+        try:
+            yield session
+            session.commit()  # ✅ ATOMICITY & DURABILITY
+        except Exception as e:
+            session.rollback()  # ✅ ATOMICITY - Todo o nada
+            raise e
+        finally:
+            session.close()  # ✅ ISOLATION
+```
+
+---
+
+## 5. Resumen de Implementación TDD + Arquitectura
+
+### 5.1. Checklist de Principios Aplicados con TDD
+
+| Principio/Patrón | ✅ Con TDD | Beneficio del TDD |
+|------------------|------------|-------------------|
+| **SRP (Single Responsibility)** | ✅ | Tests específicos fuerzan responsabilidades claras |
+| **OCP (Open/Closed)** | ✅ | Mocks facilitan extensión sin modificar código existente |
+| **DIP (Dependency Inversion)** | ✅ | TDD promueve naturalmente inyección de dependencias |
+| **Factory Pattern** | ✅ | Tests definen comportamiento antes de implementar factory |
+| **Strategy Pattern** | ✅ | TDD facilita intercambio de algoritmos via mocks |
+| **Circuit Breaker** | ✅ | Tests validan estados y transiciones del circuito |
+| **ACID Principles** | ✅ | Tests verifican propiedades transaccionales |
+| **Clean Architecture** | ✅ | TDD fuerza separación clara de capas |
+| **Clean Code** | ✅ | TDD fuerza nombres descriptivos y funciones pequeñas |
+
+### 5.2. Flujo de Desarrollo TDD Recomendado
+
+```
+🔴 RED: Escribir test que falle → 🟢 GREEN: Código mínimo que pase → 🔵 REFACTOR: Aplicar principios SOLID
+                                                                       ↓
+                                             Aplicar Clean Architecture, Design Patterns, ACID
+```
+
+### 5.3. Scripts de Desarrollo TDD
+
+```bash path=null start=null
+#!/bin/bash
+# ✅ TDD - Scripts para flujo de desarrollo
+
+# Ejecutar tests en modo watch (TDD continuo)
+tdd_watch() {
+    echo "🔄 Iniciando TDD Watch Mode..."
+    pytest --watch tests/ --verbose --tb=short
+}
+
+# Ejecutar ciclo TDD completo
+tdd_cycle() {
+    echo "🔴 RED: Ejecutando tests (deben fallar)..."
+    pytest tests/ --tb=short
+    
+    echo "🟢 GREEN: Implementar código mínimo"
+    echo "🔵 REFACTOR: Aplicar principios de arquitectura"
+    
+    echo "✅ Ejecutando tests finales..."
+    pytest tests/ --verbose --cov=src/
+}
+
+# Validar cobertura de tests
+validate_coverage() {
+    echo "📈 Validando cobertura de tests..."
+    pytest --cov=src/ --cov-report=html --cov-fail-under=80
+    echo "Reporte HTML generado en htmlcov/"
+}
+```
+
+---
+
+## 6. Clean Code: Buenas Prácticas Potenciadas por TDD
+
+### 6.1. TDD + Nombres Descriptivos
+
+**TDD fuerza nombres de métodos y variables más descriptivos.**
+
+```python path=null start=null
+class TestTaskAssignmentRules:
+    """✅ TDD - Nombres descriptivos facilitan comprensión del comportamiento."""
+    
+    def test_should_assign_backend_tasks_to_senior_developer_when_complexity_is_high(self):
+        """Nombre del test describe EXACTAMENTE el comportamiento esperado."""
+        # Given
+        task = Task(
+            title="Implement OAuth2 authentication service",
+            complexity_level=ComplexityLevel.HIGH,
+            technology_stack=["Python", "FastAPI", "OAuth2"]
+        )
+        senior_backend_dev = Developer(
+            name="Alice Smith",
+            experience_level=ExperienceLevel.SENIOR,
+            specialization=Specialization.BACKEND
+        )
+        team = Team([senior_backend_dev])
+        
+        # When
+        assigned_developer = TaskAssignmentRules.assign_developer_for_task(
+            task=task,
+            available_team=team
+        )
+        
+        # Then
+        assert assigned_developer == senior_backend_dev
+        assert assigned_developer.can_handle_complexity(ComplexityLevel.HIGH)
+
+class TaskAssignmentRules:
+    """✅ Clean Code - Nombres de clase y métodos descriptivos."""
+    
+    @staticmethod
+    def assign_developer_for_task(
+        task: Task, 
+        available_team: Team
+    ) -> Developer:
+        """✅ Nombre descriptivo explica propósito del método."""
+        
+        suitable_developers = [
+            dev for dev in available_team.members 
+            if dev.can_handle_technology_stack(task.technology_stack) 
+            and dev.can_handle_complexity(task.complexity_level)
+        ]
+        
+        return TaskAssignmentOptimizer.select_best_match(
+            candidates=suitable_developers,
+            task_requirements=task
+        )
+```
+
+### 6.2. TDD + Gestión de Configuración
+
+```python path=null start=null
+class TestConfigurationManager:
+    """✅ TDD para gestión de configuración siguiendo 12-Factor App."""
+    
+    def test_should_load_database_config_from_environment_variables(self):
+        """RED: Test para configuración desde variables de entorno."""
+        # Given
+        os.environ.update({
+            'DATABASE_URL': 'postgresql://user:pass@localhost:5432/testdb',
+            'REDIS_URL': 'redis://localhost:6379/0',
+            'DEEPGRAM_API_KEY': 'test-api-key'
+        })
+        
+        # When
+        config = ConfigurationManager.load_from_environment()
+        
+        # Then
+        assert config.database_url == 'postgresql://user:pass@localhost:5432/testdb'
+        assert config.redis_url == 'redis://localhost:6379/0'
+        assert config.deepgram_api_key == 'test-api-key'
+    
+    def test_should_raise_error_when_required_config_is_missing(self):
+        """RED: Test para validar configuración requerida."""
+        # Given - Environment sin DATABASE_URL
+        if 'DATABASE_URL' in os.environ:
+            del os.environ['DATABASE_URL']
+        
+        # When & Then
+        with pytest.raises(MissingRequiredConfigurationError) as exc_info:
+            ConfigurationManager.load_from_environment()
+        
+        assert "DATABASE_URL is required" in str(exc_info.value)
+
+class ConfigurationManager:
+    """✅ Clean Code - Gestión centralizada de configuración."""
+    
+    @staticmethod
+    def load_from_environment() -> AppConfiguration:
+        """✅ 12-Factor App - Configuración desde variables de entorno."""
+        required_vars = {
+            'DATABASE_URL': 'Database connection URL',
+            'REDIS_URL': 'Redis connection URL',
+            'DEEPGRAM_API_KEY': 'Deepgram API key for transcription'
+        }
+        
+        missing_vars = [
+            var_name for var_name in required_vars.keys() 
+            if not os.getenv(var_name)
+        ]
+        
+        if missing_vars:
+            raise MissingRequiredConfigurationError(
+                f"Required environment variables missing: {', '.join(missing_vars)}"
+            )
+        
+        return AppConfiguration(
+            database_url=os.getenv('DATABASE_URL'),
+            redis_url=os.getenv('REDIS_URL'),
+            deepgram_api_key=os.getenv('DEEPGRAM_API_KEY')
+        )
+```
+
+---
+
+## 🚨 ADVERTENCIAS CRÍTICAS: Limitaciones del TDD con Asistencia de IA
+
+### ⚠️ 1. Limitaciones del TDD con Large Language Models (LLMs)
+
+**ADVERTENCIA CRÍTICA**: Los LLMs pueden generar tests que parecen correctos pero contienen errores sutiles o no cubren casos edge importantes.
+
+```python path=null start=null
+# ❌ RIESGO: Test generado por IA que parece correcto pero es incompleto
+class TestTranscriptionService:  # Generado por IA
+    def test_transcribe_audio(self):
+        service = TranscriptionService()
+        result = service.transcribe("audio.mp3")
+        assert result is not None  # ❌ Assertion demasiado genérica
+
+# ✅ CORRECTO: Test revisado por humano con casos edge
+class TestTranscriptionService:
+    def test_should_handle_empty_audio_file_gracefully(self):
+        service = TranscriptionService()
+        with pytest.raises(InvalidAudioFileError):
+            service.transcribe("")  # ✅ Caso edge identificado por humano
+    
+    def test_should_handle_corrupted_audio_file(self):
+        # ✅ Caso que IA podría no considerar automáticamente
+        pass
+```
+
+### ⚠️ 2. Proceso de Validación Humana Obligatoria
+
+**PROCEDIMIENTO OBLIGATORIO**:
+1. **Revisión de Tests por Experto Senior**: Todo test generado por IA debe ser revisado
+2. **Validación de Casos Edge**: Humano debe identificar casos no cubiertos
+3. **Revisión de Lógica de Negocio**: IA puede malinterpretar requisitos de dominio
+4. **Testing Manual Complementario**: Tests exploratorios dirigidos por humanos
+
+### ⚠️ 3. Áreas de Especial Cuidado
+
+| Área | Riesgo de IA | Mitigación Requerida |
+|------|--------------|----------------------|
+| **Seguridad** | IA puede no identificar vulnerabilidades sutiles | Auditoría de seguridad manual |
+| **Concurrencia** | Tests de condiciones de carrera incompletos | Testing de carga y estrés manual |
+| **Integración** | Mocks que no reflejan comportamiento real | Testing de integración en entornos reales |
+| **Performance** | Assertions de rendimiento poco realistas | Profiling y benchmarking manual |
+| **UX/UI** | No puede evaluar usabilidad real | Testing de usuario final |
+
+---
+
+## 📋 Conclusiones y Siguientes Pasos
+
+### 🎯 Implementación Práctica del TDD + Arquitectura
+
+**Este documento establece el fundamento arquitectónico para el proyecto M2PRD-001**, integrando TDD como metodología central con principios de Clean Architecture, SOLID, y diseño de software escalable.
+
+### 🚀 Roadmap de Desarrollo Recomendado
+
+1. **Fase 1**: Setup de entorno TDD
+   - Configurar pytest, coverage, y herramientas de testing
+   - Implementar scripts de desarrollo (tdd_watch, quality_check)
+   - Definir estructura de tests siguiendo Clean Architecture
+
+2. **Fase 2**: Implementación Core (Domain Layer)
+   - Desarrollar entidades de dominio con TDD
+   - Implementar value objects y agregados
+   - Crear servicios de dominio con business logic
+
+3. **Fase 3**: Casos de Uso (Application Layer)
+   - TDD para casos de uso principales (ProcessMeeting, GeneratePRD)
+   - Implementar command/query handlers
+   - Integrar validaciones y reglas de negocio
+
+4. **Fase 4**: Infraestructura (Infrastructure Layer)
+   - TDD para repositorios y adaptadores
+   - Implementar integración con servicios externos (Deepgram, OpenAI)
+   - Configurar base de datos y migraciones
+
+5. **Fase 5**: Validación y Deploy
+   - Testing de integración y end-to-end
+   - Performance testing y optimización
+   - Deploy con monitoring y observabilidad
+
+### ⚡ Herramientas de Desarrollo Recomendadas
+
+```bash path=null start=null
+# Configuración de entorno de desarrollo TDD
+pip install pytest pytest-cov pytest-watch black isort mypy
+npm install -g @commitlint/cli @commitlint/config-conventional
+
+# Scripts de calidad de código
+echo "alias tdd='pytest --watch'" >> ~/.bashrc
+echo "alias quality='black . && isort . && mypy . && pytest --cov'" >> ~/.bashrc
+```
+
+---
+
+**Documento creado por**: Arquitecto Senior + TDD Expert  
+**Fecha**: $(date)  
+**Versión**: 3.0 - TDD Enhanced  
+**Proyecto**: M2PRD-001 - Meet-Teams-to-PRD
 
 ### 1.1. Single Responsibility Principle (SRP)
 
