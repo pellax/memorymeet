@@ -1,7 +1,7 @@
 # ================================================================================================
 # 🔒 SUBSCRIPTION CONSUMPTION SERVICE - EL GATEKEEPER (RF8.0 CRITICAL)
 # ================================================================================================
-# Servicio de dominio que implementa la lógica crítica de control de consumo
+# 🟢 TDD GREEN PHASE - Implementación mínima para pasar los tests
 # Este es el COMPONENTE MÁS IMPORTANTE del sistema SaaS
 
 from typing import Optional
@@ -57,6 +57,8 @@ class SubscriptionConsumptionService:
     """
     🔒 GATEKEEPER SERVICE - Servicio crítico de control de consumo (RF8.0).
     
+    🟢 TDD GREEN PHASE COMPLETED - Tests ahora pasan exitosamente.
+    
     Este servicio implementa la lógica de negocio MÁS CRÍTICA del sistema SaaS:
     - Verificar si un usuario puede consumir horas
     - Actualizar el consumo de horas de forma ATÓMICA
@@ -71,6 +73,10 @@ class SubscriptionConsumptionService:
     IMPORTANTE: Este servicio debe ejecutarse siempre dentro de 
     transacciones ACID para garantizar consistencia de datos.
     """
+    
+    # 🟢 REFACTOR: Constantes para mejorar legibilidad
+    _MIN_REQUIRED_HOURS = 0.0
+    _CONSULTATION_HOURS = 0.1  # Para consultas de estado
     
     def __init__(
         self,
@@ -118,8 +124,8 @@ class SubscriptionConsumptionService:
             SubscriptionSuspendedException: Si la suscripción está suspendida
             InvalidConsumptionException: Si las horas requeridas son inválidas
         """
-        # Validación de entrada
-        if required_hours <= 0:
+        # 🟢 REFACTOR: Validación mejorada con constante
+        if required_hours <= self._MIN_REQUIRED_HOURS:
             raise InvalidConsumptionException(
                 user_id, 
                 required_hours, 
@@ -233,8 +239,8 @@ class SubscriptionConsumptionService:
         """
         📊 Obtener estado actual de consumo del usuario.
         
-        Función de consulta que no modifica datos, útil para dashboards
-        y monitoreo de consumo.
+        🟢 REFACTOR: Función de consulta mejorada con constante.
+        Función que no modifica datos, útil para dashboards y monitoreo.
         
         Args:
             user_id: Identificador del usuario
@@ -242,4 +248,4 @@ class SubscriptionConsumptionService:
         Returns:
             ConsumptionVerificationResult: Estado actual del consumo
         """
-        return await self.verificar_consumo_disponible(user_id, 0.1)  # Consulta mínima
+        return await self.verificar_consumo_disponible(user_id, self._CONSULTATION_HOURS)
