@@ -1,0 +1,124 @@
+# ================================================================================================
+# 🤖 IA MODULE REQUIREMENTS - Módulo de Procesamiento NLP (RF3.0, RF4.0)
+# ================================================================================================
+# Dependencias para el microservicio agnóstico de IA/NLP
+
+# ================================================================================================
+# 🚀 CORE FRAMEWORK - Microservicio
+# ================================================================================================
+fastapi==0.104.1                    # Framework web para API REST
+uvicorn[standard]==0.24.0           # ASGI server para desarrollo
+
+# ================================================================================================
+# 🤖 MACHINE LEARNING & NLP CORE
+# ================================================================================================
+# Librerías base para procesamiento de lenguaje natural
+scikit-learn==1.3.2                 # ML algorithms y feature engineering
+numpy==1.26.2                       # Operaciones numéricas optimizadas
+pandas==2.1.4                       # Manipulación de datos estructurados
+
+# ================================================================================================
+# 📝 NATURAL LANGUAGE PROCESSING
+# ================================================================================================
+# NLP Libraries para análisis de texto
+spacy==3.7.2                        # NLP pipeline avanzado
+nltk==3.8.1                         # Natural Language Toolkit
+textblob==0.17.1                    # Sentiment analysis y NLP básico
+
+# Modelos preentrenados de spaCy
+# Nota: Instalar por separado con: python -m spacy download en_core_web_sm
+# python -m spacy download es_core_news_sm
+
+# ================================================================================================
+# 🧠 DEEP LEARNING & TRANSFORMERS (Placeholder para expansión futura)
+# ================================================================================================
+# Transformers para modelos más avanzados (opcional en Fase 2)
+# transformers==4.36.1              # HuggingFace transformers
+# torch==2.1.2                      # PyTorch backend
+# sentence-transformers==2.2.2      # Embeddings semánticos
+
+# ================================================================================================
+# 🔧 DATA PROCESSING & VALIDATION
+# ================================================================================================
+pydantic==2.5.0                     # Validación de datos y schemas
+pydantic-settings==2.1.0            # Configuración type-safe
+marshmallow==3.20.1                 # Serialización/deserialización alternativa
+
+# ================================================================================================
+# 🌐 HTTP CLIENT & EXTERNAL APIS
+# ================================================================================================
+httpx==0.25.2                       # Cliente HTTP asíncrono
+aiohttp==3.9.1                      # Cliente HTTP alternativo
+requests==2.31.0                    # Cliente HTTP síncrono (fallback)
+
+# ================================================================================================
+# 📊 TEXT ANALYSIS & FEATURE EXTRACTION
+# ================================================================================================
+# Librerías especializadas para análisis de texto
+wordcloud==1.9.2                    # Visualización de texto (opcional)
+textstat==0.7.3                     # Estadísticas de texto
+langdetect==1.0.9                   # Detección automática de idioma
+fuzzywuzzy[speedup]==0.18.0         # Fuzzy string matching
+
+# ================================================================================================
+# 🔄 PATTERN MATCHING & REGEX
+# ================================================================================================
+regex==2023.10.3                    # Expresiones regulares avanzadas
+python-dateutil==2.8.2              # Parsing de fechas en texto
+
+# ================================================================================================
+# 🧪 TESTING FRAMEWORK (TDD)
+# ================================================================================================
+pytest==7.4.3                       # Framework de testing
+pytest-asyncio==0.21.1              # Testing asíncrono
+pytest-cov==4.1.0                   # Cobertura de tests
+pytest-mock==3.12.0                 # Mocking avanzado
+pytest-xdist==3.5.0                 # Ejecución paralela de tests
+
+# ================================================================================================
+# 🔍 OBSERVABILITY & MONITORING
+# ================================================================================================
+structlog==23.2.0                   # Logging estructurado
+prometheus-client==0.19.0           # Métricas para monitoreo
+
+# ================================================================================================
+# ⚙️ CONFIGURATION & ENVIRONMENT
+# ================================================================================================
+python-dotenv==1.0.0                # Variables de entorno
+pyyaml==6.0.1                       # Configuración YAML
+toml==0.10.2                        # Configuración TOML
+
+# ================================================================================================
+# 🛠️ DEVELOPMENT TOOLS
+# ================================================================================================
+black==23.11.0                      # Formateo de código
+isort==5.12.0                       # Organización de imports
+flake8==6.1.0                       # Linting
+mypy==1.7.1                         # Type checking
+
+# ================================================================================================
+# 📈 PERFORMANCE & OPTIMIZATION
+# ================================================================================================
+# Librerías para optimización y performance
+joblib==1.3.2                       # Paralelización de procesos
+lru-cache==1.1.1                    # Caching en memoria
+cachetools==5.3.2                   # Cache utilities avanzadas
+
+# ================================================================================================
+# 🔐 SECURITY & DATA SANITIZATION
+# ================================================================================================
+bleach==6.1.0                       # Sanitización de HTML/texto
+python-magic==0.4.27                # Detección de tipos de archivo
+
+# ================================================================================================
+# 📊 DATA EXPORT & REPORTING
+# ================================================================================================
+openpyxl==3.1.2                     # Exportación a Excel (para reportes)
+jinja2==3.1.2                       # Templates para generación de reportes
+
+# ================================================================================================
+# 🚧 PRODUCTION DEPLOYMENT
+# ================================================================================================
+gunicorn==21.2.0                    # WSGI server para producción
+uvloop==0.19.0                      # Event loop optimizado (Unix only)
+httptools==0.6.1                    # HTTP parser optimizado

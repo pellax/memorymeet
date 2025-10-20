@@ -23,19 +23,15 @@ class User:
     - Immutable: Usar frozen=True en producción para inmutabilidad
     """
     
-    # Identificadores únicos
+    # Identificadores únicos (campos requeridos)
     id: str
     email: str
-    
-    # Información del usuario
     full_name: str
+    created_at: datetime
     
-    # Estado del usuario
+    # Estado del usuario (campos opcionales con defaults)
     is_active: bool = True
     is_verified: bool = False
-    
-    # Timestamps
-    created_at: datetime
     updated_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
     

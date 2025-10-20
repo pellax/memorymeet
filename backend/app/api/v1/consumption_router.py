@@ -20,6 +20,13 @@ from ...domain.exceptions.consumption_exceptions import (
     DatabaseTransactionException,
     InvalidConsumptionException
 )
+from ...services.webhook_trigger import (
+    WebhookTrigger,
+    WebhookPayload,
+    WebhookStatus,
+    create_webhook_trigger,
+    create_webhook_payload_from_gatekeeper_data
+)
 
 # ================================================================================================
 # 📝 PYDANTIC MODELS - Request/Response schemas
@@ -36,6 +43,8 @@ class ProcessStartRequest(BaseModel):
         description="Duración estimada en minutos"
     )
     meeting_id: str = Field(..., min_length=1, description="ID único de la reunión")
+    transcription_text: str = Field(..., min_length=10, description="Texto de la transcripción de la reunión")
+    language: str = Field(default="auto", description="Idioma de la transcripción (es, en, auto)")
     
     class Config:
         schema_extra = {
@@ -43,7 +52,9 @@ class ProcessStartRequest(BaseModel):
                 "user_id": "user-123",
                 "meeting_url": "https://meet.google.com/abc-defg-hij",
                 "estimated_duration_minutes": 60,
-                "meeting_id": "meeting-456"
+                "meeting_id": "meeting-456",
+                "transcription_text": "Juan: Necesitamos implementar un sistema de autenticación...",
+                "language": "es"
             }
         }
 
@@ -159,32 +170,104 @@ async def iniciar_procesamiento_reunion(
     consumption_service: SubscriptionConsumptionService = Depends(get_consumption_service)
 ) -> ProcessStartResponse:
     """
-    🚦 GATEKEEPER - Verificar consumo e iniciar procesamiento.
+    🚦 GATEKEEPER + ORQUESTACIÓN - Verificar consumo y disparar workflow.
     
-    Endpoint que implementa la lógica crítica de RF8.0 (Control de Consumo).
+    Endpoint que implementa:
+    1. RF8.0 (Control de Consumo) - Verificación de horas
+    2. Orquestación - Disparar webhook a n8n con transcripción
+    3. Circuit Breaker - Tolerancia a fallos de webhook
     """
+    import logging
+    import time
+    
+    logger = logging.getLogger(__name__)
+    
     try:
         # Convertir minutos estimados a horas
         estimated_hours = request.estimated_duration_minutes / 60.0
         
-        # Verificar consumo disponible (LÓGICA CRÍTICA)
+        # 1. VERIFICAR CONSUMO DISPONIBLE (LÓGICA CRÍTICA RF8.0)
         verification_result = await consumption_service.verificar_consumo_disponible(
             user_id=request.user_id,
             required_hours=estimated_hours
         )
         
-        # Si llega aquí, el usuario está autorizado
-        # En producción, aquí se dispararía el webhook a n8n/Make
-        workflow_trigger_url = "https://n8n.company.com/webhook/process-meeting"  # Mock
+        # 2. ✅ USUARIO AUTORIZADO - DISPARAR WEBHOOK A N8N
+        processing_id = f"proc-{request.meeting_id}-{int(time.time())}"
+        callback_url = "/api/v1/consumption/process/update"
         
-        return ProcessStartResponse(
-            authorized=True,
-            message="Processing authorized. Workflow triggered.",
-            user_id=request.user_id,
-            remaining_hours=verification_result.remaining_hours,
-            consumption_percentage=verification_result.consumption_percentage,
-            workflow_trigger_url=workflow_trigger_url
+        # Crear payload para webhook con transcripción
+        webhook_payload = create_webhook_payload_from_gatekeeper_data(
+            request=request,
+            authorization_response=verification_result,
+            processing_id=processing_id,
+            callback_url=callback_url
         )
+        
+        # Inicializar webhook trigger
+        webhook_trigger = create_webhook_trigger(environment="development")
+        
+        try:
+            # 3. DISPARAR WEBHOOK A N8N/MAKE
+            webhook_response = await webhook_trigger.trigger_workflow(webhook_payload)
+            
+            if webhook_response.status.value == "SENT":
+                # ✅ Webhook exitoso - Procesamiento iniciado
+                logger.info(
+                    f"Webhook enviado exitosamente para procesamiento {processing_id}",
+                    extra={
+                        "meeting_id": request.meeting_id,
+                        "processing_id": processing_id,
+                        "user_id": request.user_id
+                    }
+                )
+                
+                return ProcessStartResponse(
+                    authorized=True,
+                    message=f"Processing initiated successfully. ID: {processing_id}",
+                    user_id=request.user_id,
+                    remaining_hours=verification_result.remaining_hours,
+                    consumption_percentage=verification_result.consumption_percentage,
+                    workflow_trigger_url=webhook_trigger.webhook_url
+                )
+            else:
+                # ❌ Webhook falló - Error de orquestación
+                logger.error(
+                    f"Error en webhook para procesamiento {processing_id}: {webhook_response.error_message}",
+                    extra={
+                        "meeting_id": request.meeting_id,
+                        "webhook_status": webhook_response.status.value,
+                        "error": webhook_response.error_message
+                    }
+                )
+                
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={
+                        "error": "WORKFLOW_UNAVAILABLE",
+                        "message": "Processing service temporarily unavailable. Please try again later.",
+                        "processing_id": processing_id,
+                        "user_id": request.user_id
+                    }
+                )
+                
+        except Exception as webhook_error:
+            # ❌ Error en webhook - Fallo de orquestación
+            logger.error(
+                f"Excepción en webhook para procesamiento {processing_id}: {str(webhook_error)}",
+                extra={"meeting_id": request.meeting_id, "user_id": request.user_id},
+                exc_info=True
+            )
+            
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "error": "WORKFLOW_ERROR",
+                    "message": "Internal error in processing service. Support has been notified.",
+                    "processing_id": processing_id,
+                    "user_id": request.user_id
+                }
+            )
         
     except InsufficientHoursException as e:
         raise HTTPException(

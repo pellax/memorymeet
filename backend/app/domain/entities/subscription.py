@@ -42,27 +42,23 @@ class Subscription:
     - ACID Compliance: Designed para transacciones atómicas
     """
     
-    # Identificadores
+    # Identificadores (campos requeridos)
     id: str
     user_id: str
-    
-    # Plan y estado
     plan: SubscriptionPlan
     status: SubscriptionStatus
     
-    # CONSUMO DE HORAS (RF8.0 - CRÍTICO)
+    # CONSUMO DE HORAS (RF8.0 - CRÍTICO) - campos requeridos
     monthly_hours_limit: float
     available_hours: float
-    consumed_hours: float = 0.0
-    
-    # Información financiera
     monthly_price: float
-    currency: str = "USD"
-    
-    # Timestamps críticos
     created_at: datetime
     current_period_start: datetime
     current_period_end: datetime
+    
+    # Campos opcionales con valores por defecto
+    consumed_hours: float = 0.0
+    currency: str = "USD"
     updated_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
     
