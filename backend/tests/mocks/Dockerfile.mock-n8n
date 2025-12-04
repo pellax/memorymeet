@@ -1,0 +1,33 @@
+# ================================================================================================
+# 🐳 DOCKERFILE - Mock n8n Server
+# ================================================================================================
+# Servidor simulado de n8n para testing y desarrollo sin configurar n8n real
+
+FROM python:3.11-slim
+
+# Metadata
+LABEL maintainer="M2PRD Team"
+LABEL description="Mock n8n Server - Simulates n8n webhook behavior"
+LABEL version="1.0.0"
+
+# Set working directory
+WORKDIR /app
+
+# Install curl for healthcheck
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip install --no-cache-dir fastapi uvicorn httpx pydantic
+
+# Copy mock server
+COPY mock_n8n_server.py .
+
+# Expose port
+EXPOSE 5678
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:5678/health || exit 1
+
+# Run server
+CMD ["python", "mock_n8n_server.py"]
