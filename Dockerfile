@@ -26,12 +26,13 @@ RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 # ===== DEPENDENCIES STAGE =====
 FROM base as dependencies
 
-# Instalar dependencias del sistema
+# Instalar dependencias del sistema (incluye postgresql-client para entrypoint)
 RUN apt-get update && apt-get install -y \
     gcc \
     libc6-dev \
     libffi-dev \
     libssl-dev \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Crear directorio de trabajo
@@ -56,9 +57,20 @@ COPY backend/app /app/app
 COPY backend/tests /app/tests
 COPY tests /app/tests_root
 
+# ✅ Copiar configuración de Alembic para migraciones
+COPY backend/alembic.ini /app/backend/alembic.ini
+COPY backend/alembic /app/backend/alembic
+
+# ✅ Copiar entrypoint script para auto-migración
+COPY backend/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Cambiar ownership al usuario no-root
 RUN chown -R appuser:appgroup /app
 USER appuser
+
+# ✅ Configurar entrypoint para ejecutar migraciones antes de iniciar
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Exponer puerto del servicio
 EXPOSE 8000
@@ -83,9 +95,20 @@ RUN pip install --upgrade pip && \
 # Copiar solo el código necesario (no tests)
 COPY backend/app /app/app
 
+# ✅ Copiar Alembic para migraciones en producción
+COPY backend/alembic.ini /app/backend/alembic.ini
+COPY backend/alembic /app/backend/alembic
+
+# ✅ Copiar entrypoint para auto-migración en producción
+COPY backend/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Cambiar ownership al usuario no-root
 RUN chown -R appuser:appgroup /app
 USER appuser
+
+# ✅ Configurar entrypoint para migraciones
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Exponer puerto del servicio
 EXPOSE 8000
