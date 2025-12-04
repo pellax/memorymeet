@@ -10,7 +10,7 @@ uvicorn[standard]==0.24.0           # ASGI server con soporte para WebSockets
 
 # ===== 🔒 DOMAIN LAYER (FASE 1) =====
 typing-extensions==4.8.0            # Enhanced type hints para Clean Architecture
-dataclasses==0.8                    # Data classes para entities (Python 3.6 compatibility)
+# dataclasses incluido en Python 3.7+ - no es necesario instalarlo
 
 # ===== 💾 BASE DE DATOS Y ORM (ACID COMPLIANCE) =====
 sqlalchemy==2.0.23                  # ORM robusto para transacciones ACID
@@ -19,7 +19,7 @@ psycopg2-binary==2.9.9              # Driver PostgreSQL optimizado
 asyncpg==0.29.0                     # Driver async para PostgreSQL (performance)
 
 # ===== ⚡ CACHE Y SESSIONS =====
-redis==5.0.1                        # Cliente Redis para cache de consumo (RF8.0)
+redis==4.6.0                        # Cliente Redis para cache de consumo (RF8.0) - Compatible con celery
 aioredis==2.0.1                     # Cliente Redis asíncrono
 
 # ===== 🔒 SEGURIDAD Y AUTENTICACIÓN (RNF2.0) =====
@@ -53,7 +53,6 @@ circuitbreaker==1.4.0               # Circuit breaker pattern
 
 # ===== ⚙️ CONFIGURACIÓN =====
 python-dotenv==1.0.0                # Carga de variables de entorno
-pydantic-settings==2.1.0            # Settings management
 
 # ===== 📅 UTILIDADES =====
 python-dateutil==2.8.2              # Manejo avanzado de fechas
