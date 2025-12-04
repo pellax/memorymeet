@@ -444,3 +444,236 @@ async def consultar_estado_consumo(
                 "message": f"No active subscription found for user {user_id}"
             }
         )
+
+
+# ================================================================================================
+# 🔄 CALLBACK ENDPOINT - n8n notifica completado del procesamiento
+# ================================================================================================
+
+class N8NCallbackRequest(BaseModel):
+    """✅ Request model para callback de n8n después del procesamiento"""
+    user_id: str = Field(..., min_length=1, description="ID del usuario")
+    meeting_id: str = Field(..., min_length=1, description="ID único de la reunión")
+    processing_id: str = Field(..., min_length=1, description="ID del procesamiento")
+    actual_duration_minutes: int = Field(
+        ..., 
+        gt=0, 
+        le=480,
+        description="Duración real del procesamiento en minutos"
+    )
+    
+    # Resultados del procesamiento IA/NLP
+    prd_generated: bool = Field(..., description="Si se generó el PRD exitosamente")
+    tasks_created: int = Field(default=0, ge=0, description="Número de tareas creadas")
+    requirements_extracted: int = Field(default=0, ge=0, description="Requisitos extraídos")
+    
+    # Metadatos del workflow
+    workflow_execution_id: Optional[str] = Field(None, description="ID de ejecución del workflow n8n")
+    processing_status: str = Field(default="completed", description="Estado final del procesamiento")
+    error_message: Optional[str] = Field(None, description="Mensaje de error si falló")
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "user_id": "user-123",
+                "meeting_id": "meeting-456",
+                "processing_id": "proc-meeting-456-1234567890",
+                "actual_duration_minutes": 75,
+                "prd_generated": True,
+                "tasks_created": 12,
+                "requirements_extracted": 8,
+                "workflow_execution_id": "n8n-exec-789",
+                "processing_status": "completed"
+            }
+        }
+
+
+class N8NCallbackResponse(BaseModel):
+    """✅ Response model para callback de n8n"""
+    success: bool
+    message: str
+    processing_id: str
+    consumption_updated: bool
+    remaining_hours: Optional[float] = None
+    consumption_percentage: Optional[float] = None
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "success": True,
+                "message": "Consumption updated successfully",
+                "processing_id": "proc-meeting-456-1234567890",
+                "consumption_updated": True,
+                "remaining_hours": 7.75,
+                "consumption_percentage": 22.5
+            }
+        }
+
+
+@router.post(
+    "/process/callback",
+    response_model=N8NCallbackResponse,
+    status_code=status.HTTP_200_OK,
+    summary="🔄 Callback de n8n después del procesamiento",
+    description="""
+    **ENDPOINT DE CALLBACK - Integración n8n/Make**
+    
+    Este endpoint es llamado por el workflow de n8n/Make DESPUÉS de que el procesamiento
+    de la reunión ha finalizado exitosamente.
+    
+    **Flujo:**
+    1. n8n procesa la reunión (transcripción → IA/NLP → PRD → Tareas)
+    2. n8n obtiene la duración real del procesamiento
+    3. n8n llama a este endpoint con los resultados
+    4. Este endpoint actualiza el consumo real del usuario
+    5. Retorna confirmación a n8n
+    
+    **Casos de uso:**
+    - ✅ Procesamiento exitoso → 200 OK + actualización de consumo
+    - ⚠️ Procesamiento fallido pero notificado → 200 OK (sin actualización de consumo)
+    - ❌ Error en actualización → 500 Internal Server Error
+    
+    **Seguridad:**
+    En producción, este endpoint debe estar protegido con:
+    - API Key específica para n8n
+    - Validación de IP origen (whitelist de n8n)
+    - Firma HMAC del payload
+    """
+)
+async def n8n_processing_callback(
+    callback_data: N8NCallbackRequest,
+    consumption_service: SubscriptionConsumptionService = Depends(get_consumption_service)
+) -> N8NCallbackResponse:
+    """
+    🔄 CALLBACK n8n - Actualizar consumo después del procesamiento.
+    
+    Este endpoint completa el ciclo de procesamiento actualizando el consumo
+    real del usuario basado en la duración efectiva del procesamiento.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(
+        f"📥 Received n8n callback for processing {callback_data.processing_id}",
+        extra={
+            "processing_id": callback_data.processing_id,
+            "meeting_id": callback_data.meeting_id,
+            "user_id": callback_data.user_id,
+            "processing_status": callback_data.processing_status,
+            "prd_generated": callback_data.prd_generated,
+            "tasks_created": callback_data.tasks_created
+        }
+    )
+    
+    # Si el procesamiento falló en n8n, no actualizar consumo pero confirmar recepción
+    if callback_data.processing_status.lower() == "failed":
+        logger.warning(
+            f"⚠️ Processing failed in n8n for {callback_data.processing_id}: {callback_data.error_message}",
+            extra={
+                "processing_id": callback_data.processing_id,
+                "error_message": callback_data.error_message
+            }
+        )
+        
+        return N8NCallbackResponse(
+            success=True,  # Callback recibido correctamente
+            message=f"Processing failure acknowledged. No consumption update performed.",
+            processing_id=callback_data.processing_id,
+            consumption_updated=False
+        )
+    
+    # Procesamiento exitoso → Actualizar consumo
+    try:
+        # Actualizar consumo con duración real
+        update_result = await consumption_service.actualizar_registro_consumo(
+            user_id=callback_data.user_id,
+            duration_minutes=callback_data.actual_duration_minutes,
+            meeting_id=callback_data.meeting_id
+        )
+        
+        logger.info(
+            f"✅ Consumption updated successfully for processing {callback_data.processing_id}",
+            extra={
+                "processing_id": callback_data.processing_id,
+                "user_id": callback_data.user_id,
+                "actual_duration_minutes": callback_data.actual_duration_minutes,
+                "remaining_hours": update_result.remaining_hours,
+                "tasks_created": callback_data.tasks_created
+            }
+        )
+        
+        return N8NCallbackResponse(
+            success=True,
+            message=f"Processing completed successfully. Consumption updated.",
+            processing_id=callback_data.processing_id,
+            consumption_updated=True,
+            remaining_hours=update_result.remaining_hours,
+            consumption_percentage=update_result.consumption_percentage
+        )
+        
+    except UserNotFoundException as e:
+        logger.error(
+            f"❌ User not found during callback for processing {callback_data.processing_id}",
+            extra={"processing_id": callback_data.processing_id, "user_id": e.user_id}
+        )
+        
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "USER_NOT_FOUND",
+                "message": f"User {e.user_id} not found",
+                "processing_id": callback_data.processing_id
+            }
+        )
+    
+    except SubscriptionNotFoundException as e:
+        logger.error(
+            f"❌ Subscription not found during callback for processing {callback_data.processing_id}",
+            extra={"processing_id": callback_data.processing_id, "user_id": e.user_id}
+        )
+        
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "SUBSCRIPTION_NOT_FOUND",
+                "message": f"No active subscription found for user {e.user_id}",
+                "processing_id": callback_data.processing_id
+            }
+        )
+    
+    except DatabaseTransactionException as e:
+        logger.error(
+            f"❌ Database transaction failed during callback for processing {callback_data.processing_id}",
+            extra={
+                "processing_id": callback_data.processing_id,
+                "transaction_id": e.transaction_id,
+                "user_id": e.user_id
+            },
+            exc_info=True
+        )
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "CONSUMPTION_UPDATE_FAILED",
+                "message": "Failed to update consumption due to database error",
+                "processing_id": callback_data.processing_id,
+                "transaction_id": e.transaction_id
+            }
+        )
+    
+    except Exception as e:
+        logger.error(
+            f"❌ Unexpected error during callback for processing {callback_data.processing_id}",
+            extra={"processing_id": callback_data.processing_id},
+            exc_info=True
+        )
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": "An unexpected error occurred during consumption update",
+                "processing_id": callback_data.processing_id
+            }
+        )
