@@ -1,0 +1,52 @@
+# ================================================================================================
+# 🧪 DOCKER COMPOSE TEST - M2PRD-001 Testing Environment
+# ================================================================================================
+# Override para ejecutar tests en contenedores aislados
+
+version: '3.8'
+
+services:
+  # Test runner para backend
+  backend-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: m2prd_backend_test
+    environment:
+      - DATABASE_URL=postgresql://test_user:test_pass@postgres-test:5432/test_db
+      - TESTING=true
+      - PYTHONPATH=/app
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend:ro
+      - ./tests:/app/tests:ro
+    command: pytest tests/repositories/ -v --tb=short
+    networks:
+      - m2prd_network
+
+  # PostgreSQL para tests (base de datos separada)
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: m2prd_postgres_test
+    environment:
+      - POSTGRES_USER=test_user
+      - POSTGRES_PASSWORD=test_pass
+      - POSTGRES_DB=test_db
+    tmpfs:
+      - /var/lib/postgresql/data  # Base de datos en memoria (rápido)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d test_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - m2prd_network
+
+networks:
+  m2prd_network:
+    external: true
+    name: m2prd_saas_network

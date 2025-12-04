@@ -24,9 +24,9 @@ pre-commit==3.6.0                   # Git hooks para quality gates
 factory-boy==3.3.0                  # Test data factories
 faker==20.1.0                       # Fake data generation
 responses==0.24.1                   # HTTP requests mocking
-httpx-mock==0.10.0                  # HTTPX client mocking
-pytest-postgresql==5.0.0            # PostgreSQL fixtures para tests
-pytest-redis==3.0.2                 # Redis fixtures para tests
+httpx==0.25.2                       # HTTPX client para testing (httpx-mock no disponible)
+# pytest-postgresql==5.0.0          # PostgreSQL fixtures (conflicto con psycopg)
+# pytest-redis==3.0.2                # Redis fixtures (no necesario, usamos SQLite en tests)
 
 # ===== 🔧 DEVELOPMENT TOOLS =====
 debugpy==1.8.0                      # Python debugger
@@ -58,7 +58,7 @@ locust==2.17.0                      # Load testing framework
 
 # ===== 🔒 SECURITY TESTING =====
 bandit==1.7.5                       # Security linter
-safety==2.3.5                       # Dependency vulnerability scanner
+# safety==2.3.5                     # Dependency vulnerability scanner (conflicto con packaging)
 
 # ===== 📝 CODE ANALYSIS =====
 radon==6.0.1                        # Code complexity analysis

@@ -54,6 +54,7 @@ RUN pip install -r requirements-dev.txt
 # Copiar código fuente (se monta como volume en desarrollo)
 COPY backend/app /app/app
 COPY backend/tests /app/tests
+COPY tests /app/tests_root
 
 # Cambiar ownership al usuario no-root
 RUN chown -R appuser:appgroup /app
