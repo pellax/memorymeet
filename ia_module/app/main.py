@@ -12,6 +12,9 @@ import logging
 import time
 from typing import Dict, Any
 
+from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import Counter, Histogram, Gauge, Info
+
 # Importaciones del dominio
 from .services.nlp_processor import NLPProcessor
 from .models.nlp_models import ProcessingRequest, ProcessingResult
@@ -32,6 +35,71 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# ================================================================================================
+# 📊 PROMETHEUS CUSTOM METRICS - RF3.0 & RF4.0 (IA/NLP)
+# ================================================================================================
+
+# Métricas de negocio para procesamiento NLP
+nlp_processing_total = Counter(
+    'nlp_processing_total',
+    'Total de procesamientos NLP realizados',
+    ['status', 'language']  # success/failed, es/en/auto
+)
+
+requirements_extracted_total = Counter(
+    'requirements_extracted_total',
+    'Total de requisitos extraídos',
+    ['type']  # functional, non_functional
+)
+
+tasks_assigned_total = Counter(
+    'tasks_assigned_total',
+    'Total de tareas asignadas',
+    ['role']  # backend_developer, frontend_developer, etc.
+)
+
+nlp_processing_duration = Histogram(
+    'nlp_processing_duration_seconds',
+    'Tiempo de procesamiento NLP (crítico para RNF1.0)',
+    buckets=[0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0]
+)
+
+requirement_extraction_confidence = Histogram(
+    'requirement_extraction_confidence_score',
+    'Score de confianza en la extracción de requisitos',
+    buckets=[0.0, 0.3, 0.5, 0.7, 0.8, 0.9, 0.95, 1.0]
+)
+
+task_assignment_confidence = Histogram(
+    'task_assignment_confidence_score',
+    'Score de confianza en la asignación de tareas',
+    buckets=[0.0, 0.3, 0.5, 0.7, 0.8, 0.9, 0.95, 1.0]
+)
+
+transcription_length = Histogram(
+    'transcription_text_length_chars',
+    'Longitud de transcripciones procesadas',
+    buckets=[100, 500, 1000, 5000, 10000, 50000, 100000]
+)
+
+# Gauge para requests activos
+active_nlp_requests = Gauge(
+    'active_nlp_processing_requests',
+    'Número de procesamiento NLP activos'
+)
+
+# Info metric para metadata del servicio
+service_info = Info(
+    'ia_nlp_service',
+    'Información del servicio IA/NLP'
+)
+service_info.info({
+    'version': '1.0.0',
+    'service': 'ia-nlp-microservice',
+    'rf': 'RF3.0+RF4.0',
+    'capabilities': 'requirement_extraction,task_assignment'
+})
 
 
 @asynccontextmanager
@@ -477,6 +545,32 @@ async def root():
             "integration": "Microservice (Agnóstico)"
         }
     }
+
+# ================================================================================================
+# 📊 PROMETHEUS INSTRUMENTATION
+# ================================================================================================
+
+# Instrumentación automática de FastAPI para IA/NLP
+instrumentator = Instrumentator(
+    should_group_status_codes=True,
+    should_ignore_untemplated=True,
+    should_respect_env_var=True,
+    should_instrument_requests_inprogress=True,
+    excluded_handlers=["/metrics"],
+    env_var_name="ENABLE_METRICS",
+    inprogress_name="http_requests_inprogress_nlp",
+    inprogress_labels=True
+)
+
+# Exponer métricas estándar HTTP + custom
+instrumentator.instrument(app).expose(
+    app,
+    endpoint="/metrics",
+    tags=["Monitoring"],
+    include_in_schema=True
+)
+
+logger.info("✅ Prometheus metrics enabled at /metrics for IA/NLP service")
 
 # ================================================================================================
 # 🚀 APPLICATION ENTRY POINT

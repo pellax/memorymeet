@@ -5,12 +5,15 @@
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 import logging
 import time
 from typing import Dict, Any
+
+from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import Counter, Histogram, Gauge, Info
 
 from .api.v1.consumption_router import router as consumption_router
 from .domain.exceptions.consumption_exceptions import DomainException
@@ -25,6 +28,57 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# ================================================================================================
+# 📊 PROMETHEUS CUSTOM METRICS - RF8.0 (Consumo SaaS)
+# ================================================================================================
+
+# Métricas de negocio críticas para RF8.0
+consumption_verifications_total = Counter(
+    'consumption_verifications_total',
+    'Total de verificaciones de consumo realizadas',
+    ['result']  # authorized, rejected
+)
+
+consumption_hours_processed = Counter(
+    'consumption_hours_processed_total',
+    'Total de horas procesadas del sistema',
+    ['user_id']
+)
+
+consumption_updates_total = Counter(
+    'consumption_updates_total',
+    'Total de actualizaciones de consumo',
+    ['status']  # success, failed
+)
+
+active_processing_requests = Gauge(
+    'active_processing_requests',
+    'Número de requests de procesamiento activos'
+)
+
+user_subscription_status = Gauge(
+    'user_subscription_status',
+    'Estado de suscripción de usuarios',
+    ['user_id', 'plan_type']  # free, pro, enterprise
+)
+
+processing_authorization_duration = Histogram(
+    'processing_authorization_duration_seconds',
+    'Tiempo de autorización de procesamiento (crítico para UX)',
+    buckets=[0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+)
+
+# Info metrics para metadata del servicio
+service_info = Info(
+    'gatekeeper_service',
+    'Información del servicio Gatekeeper'
+)
+service_info.info({
+    'version': '1.0.0',
+    'service': 'consumption-gatekeeper',
+    'rf': 'RF8.0'
+})
 
 
 @asynccontextmanager
@@ -251,6 +305,32 @@ app.include_router(
     consumption_router,
     tags=["🔒 Gatekeeper - RF8.0"]
 )
+
+# ================================================================================================
+# 📊 PROMETHEUS INSTRUMENTATION
+# ================================================================================================
+
+# Instrumentación automática de FastAPI
+instrumentator = Instrumentator(
+    should_group_status_codes=True,
+    should_ignore_untemplated=True,
+    should_respect_env_var=True,
+    should_instrument_requests_inprogress=True,
+    excluded_handlers=["/metrics"],  # No medir el endpoint de métricas
+    env_var_name="ENABLE_METRICS",
+    inprogress_name="http_requests_inprogress",
+    inprogress_labels=True
+)
+
+# Añadir métricas estándar de HTTP
+instrumentator.instrument(app).expose(
+    app,
+    endpoint="/metrics",
+    tags=["Monitoring"],
+    include_in_schema=True
+)
+
+logger.info("✅ Prometheus metrics enabled at /metrics")
 
 # ================================================================================================
 # 🏥 HEALTH CHECK ENDPOINTS

@@ -1,0 +1,18 @@
+# ================================================================================================
+# 📊 GRAFANA DASHBOARD PROVISIONING - M2PRD-001
+# ================================================================================================
+# Configuración para auto-provisioning de dashboards desde archivos JSON
+
+apiVersion: 1
+
+providers:
+  - name: 'M2PRD-001 Dashboards'
+    orgId: 1
+    folder: 'M2PRD-001'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true

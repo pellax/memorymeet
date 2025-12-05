@@ -80,6 +80,7 @@ pytest-xdist==3.5.0                 # Ejecución paralela de tests
 # ================================================================================================
 structlog==23.2.0                   # Logging estructurado
 prometheus-client==0.19.0           # Métricas para monitoreo
+prometheus-fastapi-instrumentator==6.1.0  # Instrumentación automática FastAPI
 
 # ================================================================================================
 # ⚙️ CONFIGURATION & ENVIRONMENT

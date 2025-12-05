@@ -1,0 +1,123 @@
+# ================================================================================================
+# 📊 PROMETHEUS CONFIGURATION - M2PRD-001 SaaS Monitoring
+# ================================================================================================
+# Configuración de Prometheus para recolección de métricas de todos los servicios
+
+global:
+  scrape_interval: 15s          # Recolección cada 15 segundos
+  evaluation_interval: 15s       # Evaluación de reglas cada 15 segundos
+  scrape_timeout: 10s           # Timeout de scraping
+  
+  # Labels externos añadidos a todas las métricas
+  external_labels:
+    cluster: 'memorymeet-dev'
+    environment: 'development'
+
+# Configuración de Alertmanager (para futuro)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# Reglas de alertas (para futuro)
+# rule_files:
+#   - "alerts/*.yml"
+
+# ================================================================================================
+# 🎯 SCRAPE CONFIGS - Targets de Recolección
+# ================================================================================================
+
+scrape_configs:
+  
+  # ===== 📊 Prometheus self-monitoring =====
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          component: 'monitoring'
+  
+  # ===== 💰 Backend Gatekeeper (RF8.0) - CRÍTICO =====
+  - job_name: 'backend-gatekeeper'
+    scrape_interval: 10s          # Más frecuente por ser crítico
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['backend:8000']
+        labels:
+          service: 'consumption-gatekeeper'
+          component: 'backend'
+          priority: 'critical'      # Servicio crítico RF8.0
+          rf: 'RF8.0'
+    
+    # Relabeling para mejor organización
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'backend-gatekeeper'
+  
+  # ===== 🤖 IA/NLP Module (RF3.0, RF4.0) =====
+  - job_name: 'ia-nlp-module'
+    scrape_interval: 15s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['ia_module:8003']
+        labels:
+          service: 'ia-nlp-microservice'
+          component: 'ai-processing'
+          priority: 'high'
+          rf: 'RF3.0+RF4.0'
+    
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'ia-nlp-module'
+  
+  # ===== 💾 PostgreSQL (Database Metrics) =====
+  # Nota: Requiere postgres_exporter - se añadirá en el futuro
+  # - job_name: 'postgresql'
+  #   static_configs:
+  #     - targets: ['postgres-exporter:9187']
+  #       labels:
+  #         service: 'postgresql'
+  #         component: 'database'
+  #         priority: 'critical'
+  
+  # ===== ⚡ Redis (Cache Metrics) =====
+  # Nota: Requiere redis_exporter - se añadirá en el futuro
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+  #       labels:
+  #         service: 'redis'
+  #         component: 'cache'
+  #         priority: 'high'
+  
+  # ===== 📊 n8n Orchestrator =====
+  # Nota: n8n expone métricas en /metrics si está configurado
+  # - job_name: 'n8n-orchestrator'
+  #   static_configs:
+  #     - targets: ['n8n:5678']
+  #       labels:
+  #         service: 'n8n'
+  #         component: 'orchestration'
+  #         priority: 'high'
+
+# ================================================================================================
+# 🔧 ADVANCED CONFIGURATION
+# ================================================================================================
+
+# Configuración de almacenamiento
+storage:
+  tsdb:
+    path: /prometheus
+    retention:
+      time: 15d              # Retención de 15 días
+      size: 10GB             # Máximo 10GB de almacenamiento
+
+# Configuración de remote write (para futuro - envío a storage externo)
+# remote_write:
+#   - url: "http://remote-storage:9009/api/v1/push"
+#     queue_config:
+#       capacity: 10000
+#       max_shards: 50
