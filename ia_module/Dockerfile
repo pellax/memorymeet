@@ -41,6 +41,7 @@ FROM dependencies as development
 COPY ia_module/app /app/app
 COPY ia_module/tests /app/tests
 COPY ia_module/services /app/services
+COPY ia_module/examples /app/examples
 COPY ia_module/circuit_breaker.py /app/circuit_breaker.py
 COPY ia_module/models /app/models
 COPY ia_module/config.py /app/config.py
@@ -63,6 +64,7 @@ FROM dependencies as production
 # Copiar solo código necesario
 COPY ia_module/app /app/app
 COPY ia_module/services /app/services
+COPY ia_module/examples /app/examples
 COPY ia_module/circuit_breaker.py /app/circuit_breaker.py
 COPY ia_module/models /app/models
 COPY ia_module/config.py /app/config.py
