@@ -40,6 +40,10 @@ FROM dependencies as development
 # Copiar código de la aplicación
 COPY ia_module/app /app/app
 COPY ia_module/tests /app/tests
+COPY ia_module/services /app/services
+COPY ia_module/circuit_breaker.py /app/circuit_breaker.py
+COPY ia_module/models /app/models
+COPY ia_module/config.py /app/config.py
 
 # Exponer puerto
 EXPOSE 8003
@@ -58,6 +62,10 @@ FROM dependencies as production
 
 # Copiar solo código necesario
 COPY ia_module/app /app/app
+COPY ia_module/services /app/services
+COPY ia_module/circuit_breaker.py /app/circuit_breaker.py
+COPY ia_module/models /app/models
+COPY ia_module/config.py /app/config.py
 
 # Crear usuario no-root
 RUN useradd -m -u 1000 appuser && \
